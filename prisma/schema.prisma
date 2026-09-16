@@ -1,0 +1,151 @@
+// Schéma de base de données — Plateforme d'examens FLE
+// Utilise PostgreSQL (Neon, Supabase, Railway... toutes offrent un tier gratuit).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+}
+
+enum UserStatus {
+  active
+  inactive
+}
+
+model User {
+  id           String    @id @default(cuid())
+  role         Role
+  email        String    @unique
+  name         String
+  passwordHash String
+  status       UserStatus @default(active)
+  niveau       String?
+  grade        String?
+  createdAt    DateTime  @default(now())
+  lastLogin    DateTime?
+
+  assignments  Assignment[]
+  sessions     ExamSession[]
+
+  @@index([role])
+}
+
+model AccessRequest {
+  id        String   @id @default(cuid())
+  prenom    String
+  nom       String
+  email     String
+  code      String?
+  niveau    String
+  grade     String?
+  status    String   @default("pending") // pending | accepted | refused
+  createdAt DateTime @default(now())
+}
+
+model Exam {
+  id                String   @id @default(cuid())
+  titre             String
+  niveau            String
+  statut            String   @default("brouillon") // brouillon | publié | archivé
+  navMode           String   @default("libre")     // libre | sequentiel
+  duree             Int      @default(0)            // minutes, 0 = illimité
+  autoriserReprise  Boolean  @default(true)
+  imported          Boolean  @default(false)
+  verified          Boolean  @default(true)
+  sections          Json     // structure flexible : [{id,titre,questions:[...]}]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  assignments Assignment[]
+
+  @@index([niveau])
+  @@index([statut])
+}
+
+model Assignment {
+  id        String  @id @default(cuid())
+  examId    String
+  teacherId String?
+  classe    String?
+  groupe    String?
+
+  exam    Exam  @relation(fields: [examId], references: [id], onDelete: Cascade)
+  teacher User? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  sessions ExamSession[]
+
+  @@index([teacherId])
+  @@index([examId])
+}
+
+model ExamSession {
+  id           String    @id @default(cuid())
+  examId       String
+  teacherId    String?
+  assignmentId String?
+  token        String    @unique
+  statut       String    @default("préparé") // préparé | en_cours | terminé | archivé
+  createdAt    DateTime  @default(now())
+  startedAt    DateTime?
+  endedAt      DateTime?
+
+  exam       Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  teacher    User?       @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  assignment Assignment? @relation(fields: [assignmentId], references: [id])
+  attempts   Attempt[]
+
+  @@index([token])
+  @@index([teacherId])
+}
+
+model Attempt {
+  id           String    @id @default(cuid())
+  sessionId    String
+  secret       String    // returned once to the student's browser; required to PATCH/submit this attempt
+  nom          String
+  niveau       String
+  classe       String?
+  groupe       String?
+  reponses     Json      @default("{}")
+  incidents    Json      @default("[]")
+  statut       String    @default("en_cours") // en_cours | soumis
+  startedAt    DateTime  @default(now())
+  submittedAt  DateTime?
+
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  result  Result?
+
+  @@index([sessionId])
+}
+
+model Result {
+  id             String   @id @default(cuid())
+  attemptId      String   @unique
+  sectionScores  Json     @default("{}")
+  manualScores   Json     @default("{}")
+  autoDetail     Json     @default("{}")
+  oralNote       Float?
+  total          Float    @default(0)
+  max            Float    @default(0)
+  pct            Int      @default(0)
+  manualPending  Boolean  @default(false)
+  visibleEleve   Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+
+  attempt Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id      String   @id @default(cuid())
+  action  String
+  details String?
+  at      DateTime @default(now())
+}
