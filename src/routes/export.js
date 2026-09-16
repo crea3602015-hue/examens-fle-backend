@@ -34,7 +34,7 @@ router.get('/results.csv', async (req, res) => {
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="resultats.csv"');
-  res.send('\uFEFF' + toCsv(rows));
+  res.send('\uFEFF' + 'sep=;\r\n' + toCsv(rows));
 });
 
 module.exports = router;
