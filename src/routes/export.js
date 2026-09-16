@@ -7,10 +7,10 @@ router.use(requireAuth, requireRole('TEACHER', 'ADMIN'));
 
 function csvEscape(v) {
   const s = String(v === undefined || v === null ? '' : v);
-  return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 function toCsv(rows) {
-  return rows.map(r => r.map(csvEscape).join(';')).join('\n');
+return rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
 }
 
 // GET /api/export/results.csv?examId=... — Excel l'ouvre nativement (encodage + séparateur ; )
@@ -34,7 +34,7 @@ router.get('/results.csv', async (req, res) => {
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="resultats.csv"');
-  res.send('\uFEFF' + 'sep=;\r\n' + toCsv(rows));
+  res.send('\uFEFF' + toCsv(rows));
 });
 
 module.exports = router;
