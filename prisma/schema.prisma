@@ -65,6 +65,7 @@ model Exam {
   updatedAt         DateTime @updatedAt
 
   assignments Assignment[]
+  sessions ExamSession[]
 
   @@index([niveau])
   @@index([statut])
