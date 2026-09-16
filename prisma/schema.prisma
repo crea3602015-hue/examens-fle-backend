@@ -43,9 +43,9 @@ model AccessRequest {
   prenom    String
   nom       String
   email     String
-  code      String?
   niveau    String
-  grade     String?
+  grade     String?  // "classe" (préscolaire/primaire) ou "niveau secondaire" selon le cas
+  groupe    String?  // uniquement pertinent pour préscolaire/primaire
   status    String   @default("pending") // pending | accepted | refused
   createdAt DateTime @default(now())
 }
@@ -54,6 +54,7 @@ model Exam {
   id                String   @id @default(cuid())
   titre             String
   niveau            String
+  matiere           String   @default("Français") // Français | Sciences — détermine si la production orale a un sens
   statut            String   @default("brouillon") // brouillon | publié | archivé
   navMode           String   @default("libre")     // libre | sequentiel
   duree             Int      @default(0)            // minutes, 0 = illimité
@@ -65,7 +66,7 @@ model Exam {
   updatedAt         DateTime @updatedAt
 
   assignments Assignment[]
-  sessions ExamSession[]
+  sessions    ExamSession[]
 
   @@index([niveau])
   @@index([statut])

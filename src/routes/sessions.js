@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
     orderBy: { createdAt: 'desc' },
   });
   res.json(sessions.map(s => ({
-    id: s.id, token: s.token, statut: s.statut, examTitre: s.exam?.titre,
+    id: s.id, token: s.token, statut: s.statut, examId: s.examId, examTitre: s.exam?.titre,
     teacherName: s.teacher?.name || '(compte supprimé)', createdAt: s.createdAt,
     startedAt: s.startedAt, attemptCount: s._count.attempts,
   })));
@@ -60,7 +60,7 @@ router.post('/', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
     data: { examId: assignment.examId, teacherId: assignment.teacherId, assignmentId: assignment.id, token, statut: 'préparé' },
   });
   await logAction('Session préparée', token);
-  res.status(201).json({ id: session.id, token: session.token, statut: session.statut });
+  res.status(201).json({ id: session.id, token: session.token, statut: session.statut, examId: session.examId });
 });
 
 // POST /api/sessions/:id/start — professeur "Démarrer la session"

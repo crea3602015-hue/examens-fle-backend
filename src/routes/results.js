@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
   });
   res.json(attempts.map(a => ({
     attemptId: a.id, nom: a.nom, classe: a.classe, groupe: a.groupe,
-    examId: a.session.examId, examTitre: a.session.exam.titre,
+    examId: a.session.examId, examTitre: a.session.exam.titre, examMatiere: a.session.exam.matiere,
     examSections: a.session.exam.sections.map(s => ({ id: s.id, titre: s.titre, max: s.questions.reduce((sum, q) => sum + Number(q.points || 0), 0) })),
     submittedAt: a.submittedAt,
     sectionScores: a.result?.sectionScores ?? {},

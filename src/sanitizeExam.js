@@ -3,7 +3,7 @@
 // sensibles (correct, textTemplate attendu, etc.) pour chaque type de question.
 
 function sanitizeQuestion(q) {
-  const base = { id: q.id, type: q.type, enonce: q.enonce, points: q.points, media: q.media };
+  const base = { id: q.id, type: q.type, enonce: q.enonce, points: q.points, media: q.media, passage: q.passage };
   switch (q.type) {
     case 'choix_unique':
     case 'choix_multiple':

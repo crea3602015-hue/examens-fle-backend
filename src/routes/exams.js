@@ -9,7 +9,7 @@ router.use(requireAuth);
 
 function shape(exam, assignedCount) {
   return {
-    id: exam.id, titre: exam.titre, niveau: exam.niveau, statut: exam.statut,
+    id: exam.id, titre: exam.titre, niveau: exam.niveau, matiere: exam.matiere, statut: exam.statut,
     navMode: exam.navMode, duree: exam.duree, autoriserReprise: exam.autoriserReprise,
     imported: exam.imported, verified: exam.verified, sections: exam.sections,
     totalPoints: examTotalPoints(exam), assignedCount: assignedCount || 0,
@@ -56,13 +56,13 @@ router.use(requireRole('ADMIN'));
 
 // POST /api/exams — création (brouillon ou publication directe)
 router.post('/', async (req, res) => {
-  const { titre, niveau, statut, navMode, duree, autoriserReprise, sections, imported, verified } = req.body || {};
+  const { titre, niveau, matiere, statut, navMode, duree, autoriserReprise, sections, imported, verified } = req.body || {};
   if (!titre || !sections || !Array.isArray(sections) || sections.length === 0) {
     return res.status(400).json({ error: 'Titre et au moins une section sont requis.' });
   }
   const exam = await prisma.exam.create({
     data: {
-      titre, niveau: niveau || 'Primaire', statut: statut || 'brouillon', navMode: navMode || 'libre',
+      titre, niveau: niveau || 'Primaire', matiere: matiere || 'Français', statut: statut || 'brouillon', navMode: navMode || 'libre',
       duree: Number(duree || 0), autoriserReprise: autoriserReprise !== false, sections,
       imported: !!imported, verified: imported ? !!verified : true,
     },
@@ -75,7 +75,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const existing = await prisma.exam.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Examen introuvable.' });
-  const { titre, niveau, statut, navMode, duree, autoriserReprise, sections, verified } = req.body || {};
+  const { titre, niveau, matiere, statut, navMode, duree, autoriserReprise, sections, verified } = req.body || {};
 
   if (statut === 'publié' && existing.imported && !(verified ?? existing.verified)) {
     return res.status(400).json({ error: "Cet examen importé doit être vérifié avant publication." });
@@ -84,7 +84,7 @@ router.put('/:id', async (req, res) => {
   const exam = await prisma.exam.update({
     where: { id: req.params.id },
     data: {
-      titre: titre ?? existing.titre, niveau: niveau ?? existing.niveau, statut: statut ?? existing.statut,
+      titre: titre ?? existing.titre, niveau: niveau ?? existing.niveau, matiere: matiere ?? existing.matiere, statut: statut ?? existing.statut,
       navMode: navMode ?? existing.navMode, duree: duree !== undefined ? Number(duree) : existing.duree,
       autoriserReprise: autoriserReprise ?? existing.autoriserReprise,
       sections: sections ?? existing.sections, verified: verified ?? existing.verified,
@@ -110,7 +110,7 @@ router.post('/:id/duplicate', async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Examen introuvable.' });
   const copy = await prisma.exam.create({
     data: {
-      titre: existing.titre + ' (copie)', niveau: existing.niveau, statut: 'brouillon',
+      titre: existing.titre + ' (copie)', niveau: existing.niveau, matiere: existing.matiere, statut: 'brouillon',
       navMode: existing.navMode, duree: existing.duree, autoriserReprise: existing.autoriserReprise,
       sections: existing.sections, imported: false, verified: true,
     },

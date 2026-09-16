@@ -8,10 +8,18 @@ const router = express.Router();
 
 // POST /api/access-requests — PUBLIC, formulaire "Demander un accès professeur"
 router.post('/', async (req, res) => {
-  const { prenom, nom, email, code, niveau, grade } = req.body || {};
-  if (!prenom || !nom || !email) return res.status(400).json({ error: 'Prénom, nom et email requis.' });
+  const { prenom, nom, email, niveau, grade, groupe } = req.body || {};
+  if (!prenom || !nom || !email || !niveau) {
+    return res.status(400).json({ error: 'Prénom, nom, email et niveau sont requis.' });
+  }
+  if (niveau === 'Secondaire' && !grade) {
+    return res.status(400).json({ error: 'Le niveau (secondaire) est requis.' });
+  }
+  if (niveau !== 'Secondaire' && (!grade || !groupe)) {
+    return res.status(400).json({ error: 'La classe et le groupe sont requis.' });
+  }
   const reqDoc = await prisma.accessRequest.create({
-    data: { prenom, nom, email, code, niveau: niveau || 'Primaire', grade, status: 'pending' },
+    data: { prenom, nom, email, niveau, grade, groupe: niveau === 'Secondaire' ? null : groupe, status: 'pending' },
   });
   await logAction('Nouvelle demande d\'accès professeur', `${prenom} ${nom}`);
   res.status(201).json({ id: reqDoc.id });
@@ -19,6 +27,12 @@ router.post('/', async (req, res) => {
 
 // Le reste est réservé à l'administrateur.
 router.use(requireAuth, requireRole('ADMIN'));
+
+// GET /api/access-requests/pending-count — pour le badge de notification admin
+router.get('/pending-count', async (req, res) => {
+  const count = await prisma.accessRequest.count({ where: { status: 'pending' } });
+  res.json({ count });
+});
 
 // GET /api/access-requests
 router.get('/', async (req, res) => {

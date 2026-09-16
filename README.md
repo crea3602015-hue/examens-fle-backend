@@ -150,3 +150,24 @@ obtenu via `POST /api/auth/login`.
   Cloudinary) plutôt que de les envoyer en base64 par l'API.
 - **Emails** (réinitialisation de mot de passe, notifications) : nécessitent un
   service d'envoi d'emails (ex. Resend, SendGrid) — pas encore branché ici.
+
+## Historique des ajouts (au fil des demandes)
+
+- Rôles : promotion/rétrogradation professeur ↔ administrateur (`/api/admins`, `/api/teachers/:id/promote`)
+- Matière par examen (Français / Sciences) sur le modèle `Exam`
+- Module Quiz éphémère (rien en base de données), génération par IA gratuite via
+  Groq (`GROQ_API_KEY` optionnelle) — voir `src/quizStore.js` et `src/routes/quiz.js`
+- Texte de lecture (passage) optionnel par question, envoyé à l'élève sans les
+  bonnes réponses (`src/sanitizeExam.js`)
+- Exports Excel (.xlsx) et PDF réels, avec couleurs par note (rouge/orange/vert)
+  et diagramme de réussite par section — `src/reports.js`, `src/scoreColors.js`,
+  routes dans `src/routes/export.js` (`/results.xlsx`, `/results.pdf`,
+  `/attempt/:id/xlsx`, `/attempt/:id/pdf`) ; le nom de fichier inclut
+  automatiquement la classe/groupe ou le niveau quand c'est déterminable
+- Champ `groupe` sur les demandes d'accès ; champ `code` retiré (inutile en
+  déploiement mono-établissement)
+
+**Important** : ce schéma a changé plusieurs fois depuis la version initiale. Le
+Build Command `npx prisma db push --accept-data-loss` (voir étape 5 plus haut)
+applique automatiquement ces changements à chaque déploiement — aucune action
+manuelle nécessaire de votre part au-delà d'un redéploiement normal.

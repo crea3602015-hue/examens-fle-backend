@@ -5,6 +5,8 @@ const cors = require('cors');
 
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teachers');
+const adminRoutes = require('./routes/admins');
+const quizRoutes = require('./routes/quiz');
 const accessRequestRoutes = require('./routes/accessRequests');
 const examRoutes = require('./routes/exams');
 const assignmentRoutes = require('./routes/assignments');
@@ -14,7 +16,6 @@ const resultRoutes = require('./routes/results');
 const analyticsRoutes = require('./routes/analytics');
 const auditRoutes = require('./routes/audit');
 const exportRoutes = require('./routes/export');
-const aiRoutes = require('./routes/ai');
 
 const app = express();
 
@@ -33,6 +34,8 @@ app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISO
 
 app.use('/api/auth', authRoutes);
 app.use('/api/teachers', teacherRoutes);
+app.use('/api/admins', adminRoutes);
+app.use('/api/quiz', quizRoutes);
 app.use('/api/access-requests', accessRequestRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/assignments', assignmentRoutes);
@@ -42,7 +45,6 @@ app.use('/api/results', resultRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/export', exportRoutes);
-app.use('/api/ai', aiRoutes);
 
 // Gestionnaire d'erreurs générique — évite qu'une exception non prévue fasse
 // planter le serveur ou fuite une trace technique vers le client.

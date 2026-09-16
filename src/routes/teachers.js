@@ -45,6 +45,15 @@ router.patch('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/teachers/:id/promote — promeut un professeur au rôle administrateur
+router.post('/:id/promote', async (req, res) => {
+  const teacher = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!teacher || teacher.role !== 'TEACHER') return res.status(404).json({ error: 'Professeur introuvable.' });
+  const updated = await prisma.user.update({ where: { id: teacher.id }, data: { role: 'ADMIN' } });
+  await logAction('Professeur promu administrateur', updated.name);
+  res.json({ ok: true });
+});
+
 // DELETE /api/teachers/:id — supprime le compte (les résultats historiques restent en base,
 // liés à des sessions dont teacherId pointera vers un compte supprimé — voir onDelete: Cascade
 // dans le schéma si vous préférez tout effacer ; ici on supprime bien le compte).
