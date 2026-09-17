@@ -213,15 +213,16 @@ function buildAttemptPdf({ examTitle, matiere, teacherName, student, total, max,
       y += 20;
     });
     doc.y = y + 15;
+    doc.x = 40;
 
     sections.forEach(sec => {
       if (doc.y > 700) doc.addPage();
-      doc.font('Helvetica-Bold').fontSize(12).text(sec.titre);
+      doc.font('Helvetica-Bold').fontSize(12).fillColor('#000').text(sec.titre, 40, doc.y, { width: 500 });
       (sec.questions || []).forEach(q => {
         if (doc.y > 750) doc.addPage();
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text(q.enonce || '(question)', { width: 500 });
+        doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text(q.enonce || '(question)', 40, doc.y, { width: 500 });
         doc.font('Helvetica').fontSize(9).fillColor(q.isCorrect === true ? '#2F7D46' : q.isCorrect === false ? '#B3261E' : '#555')
-          .text(q.detail || '', { width: 500 });
+         .text(q.detail || '', 40, doc.y, { width: 500 });
         doc.fillColor('#000').moveDown(0.4);
       });
       doc.moveDown(0.4);
