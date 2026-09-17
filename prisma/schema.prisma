@@ -118,6 +118,7 @@ model Attempt {
   groupe       String?
   reponses     Json      @default("{}")
   incidents    Json      @default("[]")
+  away         Boolean   @default(false) // true = a quitté l'onglet/la page en ce moment (suivi en direct pour le professeur)
   statut       String    @default("en_cours") // en_cours | soumis
   startedAt    DateTime  @default(now())
   submittedAt  DateTime?

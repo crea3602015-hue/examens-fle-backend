@@ -3,7 +3,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { sectionPoints } = require('../grading');
 const { describeSectionQuestions } = require('../questionText');
-const { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf } = require('../reports');
+const { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf } = require('../reports');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('TEACHER', 'ADMIN'));
@@ -159,6 +159,35 @@ router.get('/attempt/:attemptId/pdf', async (req, res) => {
   if (!data) return res.status(404).json({ error: 'Copie introuvable.' });
   const buf = await buildAttemptPdf(data);
   const filename = reportFilename(data.student.nom, data.grouping) + '.pdf';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
+});
+
+// GET /api/export/results-bulk.pdf?examId=... — une feuille par élève, dans un seul PDF à imprimer et séparer
+router.get('/results-bulk.pdf', async (req, res) => {
+  const attempts = await fetchScopedAttempts(req, req.query.examId);
+  const withResult = attempts.filter(a => a.result);
+  if (withResult.length === 0) return res.status(404).json({ error: 'Aucune copie corrigée à exporter pour ce filtre.' });
+  const exam = withResult[0].session.exam;
+  const teacherName = withResult[0].session.teacher?.name;
+  const isSecondaire = exam.niveau === 'Secondaire';
+
+  const attemptsData = withResult.map(a => {
+    const sections = exam.sections.map(sec => {
+      const score = a.result.sectionScores[sec.id];
+      const max = sectionPoints(sec);
+      return { titre: sec.titre, pct: score !== undefined && max ? Math.round((100 * score) / max) : 0 };
+    });
+    return {
+      student: { nom: a.nom, classe: a.classe, groupe: a.groupe, niveau: a.classe, isSecondaire },
+      total: a.result.total, max: a.result.max, pct: a.result.pct, sections,
+    };
+  });
+
+  const buf = await buildBulkAttemptsPdf({ examTitle: exam.titre, matiere: exam.matiere, teacherName, attempts: attemptsData });
+  const grouping = detectGrouping(withResult);
+  const filename = reportFilename((exam.titre || 'resultats') + '_toutes_les_copies', grouping) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buf);

@@ -222,7 +222,7 @@ function buildAttemptPdf({ examTitle, matiere, teacherName, student, total, max,
         if (doc.y > 750) doc.addPage();
         doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text(q.enonce || '(question)', 40, doc.y, { width: 500 });
         doc.font('Helvetica').fontSize(9).fillColor(q.isCorrect === true ? '#2F7D46' : q.isCorrect === false ? '#B3261E' : '#555')
-         .text(q.detail || '', 40, doc.y, { width: 500 });
+          .text(q.detail || '', 40, doc.y, { width: 500 });
         doc.fillColor('#000').moveDown(0.4);
       });
       doc.moveDown(0.4);
@@ -232,4 +232,47 @@ function buildAttemptPdf({ examTitle, matiere, teacherName, student, total, max,
   });
 }
 
-module.exports = { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf };
+function buildBulkAttemptsPdf({ examTitle, matiere, teacherName, attempts }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    attempts.forEach((att, idx) => {
+      if (idx > 0) doc.addPage();
+      const { student, total, max, pct, sections } = att;
+
+      doc.fontSize(18).font('Helvetica-Bold').fillColor('#000').text(examTitle);
+      doc.fontSize(10).font('Helvetica').fillColor('#555')
+        .text(`Matière : ${matiere}`)
+        .text(`Élève : ${student.nom}`)
+        .text(student.isSecondaire ? `Niveau : ${student.niveau || '—'}` : `Classe : ${student.classe || '—'} · Groupe : ${student.groupe || '—'}`)
+        .text(`Professeur : ${teacherName || '—'}`);
+      doc.moveDown(0.5);
+
+      doc.fillColor('#000').font('Helvetica-Bold').fontSize(15).text(`Total : ${total}/${max}`, { continued: true });
+      doc.fillColor(scoreColorHex(pct)).text(`  (${pct !== null ? pct + '%' : 'Non corrigé'})`);
+      doc.fillColor('#000');
+      doc.moveDown(0.5);
+
+      let y = doc.y;
+      const barMaxWidth = 260;
+      sections.forEach(sec => {
+        if (y > 740) { doc.addPage(); y = 40; }
+        doc.font('Helvetica').fontSize(9).fillColor('#000').text(sec.titre, 40, y, { width: 140 });
+        doc.rect(190, y, barMaxWidth, 10).fill('#EEEEEE');
+        doc.rect(190, y, barMaxWidth * (sec.pct / 100), 10).fill(scoreColorHex(sec.pct));
+        doc.fillColor('#000').fontSize(9).text(sec.pct + '%', 190 + barMaxWidth + 8, y);
+        y += 16;
+      });
+      doc.y = y + 10;
+      doc.x = 40;
+    });
+
+    doc.end();
+  });
+}
+
+module.exports = { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf };

@@ -166,6 +166,13 @@ obtenu via `POST /api/auth/login`.
   automatiquement la classe/groupe ou le niveau quand c'est déterminable
 - Champ `groupe` sur les demandes d'accès ; champ `code` retiré (inutile en
   déploiement mono-établissement)
+- Présence en direct des élèves pendant un examen (actif/a quitté la page) —
+  `Attempt.away`, route `PATCH /api/attempts/:id/presence`, exposée dans
+  `GET /api/sessions/:id/live` (liste nominative, pas seulement un compteur)
+- Export PDF groupé — une feuille par élève dans un seul fichier, à imprimer et
+  séparer : `GET /api/export/results-bulk.pdf`
+- Correctif d'un bug d'alignement dans les PDF individuels (le texte des
+  questions dérivait vers la droite après le diagramme de réussite)
 
 **Important** : ce schéma a changé plusieurs fois depuis la version initiale. Le
 Build Command `npx prisma db push --accept-data-loss` (voir étape 5 plus haut)

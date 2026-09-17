@@ -80,6 +80,16 @@ router.post('/:id/incident', async (req, res) => {
   res.json({ ok: true });
 });
 
+// PATCH /api/attempts/:id/presence { secret, away } — l'élève a quitté (true) ou repris (false) la page
+router.patch('/:id/presence', async (req, res) => {
+  const { secret, away } = req.body || {};
+  const attempt = await prisma.attempt.findUnique({ where: { id: req.params.id } });
+  if (!attempt || attempt.secret !== secret) return res.status(403).json({ error: 'Copie introuvable ou accès refusé.' });
+  if (attempt.statut === 'soumis') return res.json({ ok: true });
+  await prisma.attempt.update({ where: { id: attempt.id }, data: { away: !!away } });
+  res.json({ ok: true });
+});
+
 // POST /api/attempts/:id/submit { secret, reponses } — envoi final
 router.post('/:id/submit', async (req, res) => {
   const { secret, reponses } = req.body || {};

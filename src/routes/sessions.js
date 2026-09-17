@@ -84,10 +84,11 @@ router.get('/:id/live', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
   if (req.user.role !== 'ADMIN' && session.teacherId !== req.user.sub) {
     return res.status(403).json({ error: "Cette session n'est pas la vôtre." });
   }
-  const attempts = await prisma.attempt.findMany({ where: { sessionId: session.id } });
+  const attempts = await prisma.attempt.findMany({ where: { sessionId: session.id }, orderBy: { startedAt: 'asc' } });
   res.json({
     started: attempts.length,
     finished: attempts.filter(a => a.statut === 'soumis').length,
+    students: attempts.map(a => ({ nom: a.nom, away: !!a.away, finished: a.statut === 'soumis' })),
   });
 });
 
