@@ -177,7 +177,11 @@ router.get('/results-bulk.pdf', async (req, res) => {
     const sections = exam.sections.map(sec => {
       const score = a.result.sectionScores[sec.id];
       const max = sectionPoints(sec);
-      return { titre: sec.titre, pct: score !== undefined && max ? Math.round((100 * score) / max) : 0 };
+      return {
+        titre: sec.titre,
+        pct: score !== undefined && max ? Math.round((100 * score) / max) : 0,
+        questions: describeSectionQuestions(sec, a.reponses, a.result.autoDetail, a.result.manualScores, a.result.oralNote),
+      };
     });
     return {
       student: { nom: a.nom, classe: a.classe, groupe: a.groupe, niveau: a.classe, isSecondaire },
@@ -192,5 +196,61 @@ router.get('/results-bulk.pdf', async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buf);
 });
+
+// GET /api/export/project-results.xlsx?projectId=...
+router.get('/project-results.xlsx', async (req, res) => {
+  const data = await buildProjectExportData(req);
+  if (!data) return res.status(404).json({ error: 'Aucune note à exporter pour ce filtre.' });
+  const buf = await buildResultsXlsx(data);
+  const filename = reportFilename(data.examTitle || 'projet', data.grouping) + '.xlsx';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
+});
+
+// GET /api/export/project-results.pdf?projectId=...
+router.get('/project-results.pdf', async (req, res) => {
+  const data = await buildProjectExportData(req);
+  if (!data) return res.status(404).json({ error: 'Aucune note à exporter pour ce filtre.' });
+  const buf = await buildResultsPdf(data);
+  const filename = reportFilename(data.examTitle || 'projet', data.grouping) + '.pdf';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
+});
+
+async function buildProjectExportData(req) {
+  const where = {};
+  if (req.query.assignmentId) where.assignmentId = req.query.assignmentId;
+  else if (req.query.projectId) where.assignment = { projectId: req.query.projectId };
+  if (req.user.role !== 'ADMIN') where.assignment = { ...(where.assignment || {}), teacherId: req.user.sub };
+  const entries = await prisma.projectEntry.findMany({
+    where, include: { assignment: { include: { project: true, teacher: { select: { name: true } } } } }, orderBy: { nom: 'asc' },
+  });
+  if (entries.length === 0) return null;
+  const project = entries[0].assignment.project;
+  const teacherName = entries[0].assignment.teacher?.name;
+  const rows = entries.map(e => ({ nom: e.nom, classe: e.classe, groupe: e.groupe, total: e.total, max: e.max, pct: e.pct }));
+  const agg = {};
+  entries.forEach(e => {
+    project.criteria.forEach(c => {
+      const v = e.scores[c.id];
+      if (v === undefined || v === null || v === '' || !c.points) return;
+      agg[c.titre] = agg[c.titre] || { sum: 0, max: 0 };
+      agg[c.titre].sum += Number(v); agg[c.titre].max += Number(c.points);
+    });
+  });
+  const sectionStats = Object.entries(agg).map(([titre, v]) => ({ titre, pct: Math.round((100 * v.sum) / v.max) }));
+  const isSecondaire = project.niveau === 'Secondaire';
+  const classes = [...new Set(entries.map(e => e.classe).filter(Boolean))];
+  const groupes = [...new Set(entries.map(e => e.groupe).filter(Boolean))];
+  const grouping = {
+    isSecondaire,
+    niveau: isSecondaire && classes.length === 1 ? classes[0] : null,
+    classe: !isSecondaire && classes.length === 1 ? classes[0] : null,
+    groupe: !isSecondaire && groupes.length === 1 ? groupes[0] : null,
+  };
+  return { examTitle: project.titre, matiere: project.matiere, teacherName, rows, sectionStats, grouping };
+}
 
 module.exports = router;

@@ -173,6 +173,19 @@ obtenu via `POST /api/auth/login`.
   séparer : `GET /api/export/results-bulk.pdf`
 - Correctif d'un bug d'alignement dans les PDF individuels (le texte des
   questions dérivait vers la droite après le diagramme de réussite)
+- Module **Projets** — grille d'évaluation notée à la main (critères et points
+  définis par l'admin, saisie manuelle par le professeur, sans passation en
+  ligne) : `Project`, `ProjectAssignment`, `ProjectEntry`, routes
+  `/api/projects`, `/api/project-assignments`, `/api/project-entries`, exports
+  `/api/export/project-results.xlsx|pdf`
+- Présence en direct enrichie : bannière d'alerte visible même pendant la
+  projection, listant nommément chaque élève ayant quitté la page
+- PDF (individuel et groupé) : les images ajoutées à une question sont
+  maintenant intégrées directement dans le fichier, pas seulement leur lien
+- Export PDF groupé enrichi : chaque élève a maintenant sa copie complète
+  (question par question), pas seulement un résumé
+- Lien d'invitation professeur partageable (`?access=1`) depuis la page
+  « Professeurs »
 
 **Important** : ce schéma a changé plusieurs fois depuis la version initiale. Le
 Build Command `npx prisma db push --accept-data-loss` (voir étape 5 plus haut)

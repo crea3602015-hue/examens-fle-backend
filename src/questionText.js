@@ -39,22 +39,25 @@ function formatGivenText(q, given) {
 
 const MANUAL_TYPES = ['texte_long', 'correction_manuelle', 'dessin', 'production_orale'];
 
-/** Builds the {enonce, detail, isCorrect} rows for one section, for the exports. */
+/** Builds the {enonce, detail, isCorrect, media} rows for one section, for the exports. */
 function describeSectionQuestions(sec, reponses, autoDetail, manualScores, oralNote) {
   return sec.questions.map(q => {
     const given = reponses[q.id];
+    const isImageMedia = q.media && !/\.(mp3|wav|m4a|ogg)(\?.*)?$/i.test(q.media);
+    const media = isImageMedia ? q.media : null;
     if (q.type === 'production_orale') {
-      return { enonce: q.enonce || 'Production orale', detail: `Note manuelle : ${oralNote ?? '—'}/${q.points}`, isCorrect: null };
+      return { enonce: q.enonce || 'Production orale', detail: `Note manuelle : ${oralNote ?? '—'}/${q.points}`, isCorrect: null, media };
     }
     if (MANUAL_TYPES.includes(q.type)) {
       const pts = manualScores ? manualScores[q.id] : undefined;
-      return { enonce: q.enonce, detail: `Réponse : ${formatGivenText(q, given)} — Points : ${pts !== undefined && pts !== null ? pts : '—'}/${q.points}`, isCorrect: null };
+      return { enonce: q.enonce, detail: `Réponse : ${formatGivenText(q, given)} — Points : ${pts !== undefined && pts !== null ? pts : '—'}/${q.points}`, isCorrect: null, media };
     }
     const auto = autoDetail ? autoDetail[q.id] : null;
     return {
       enonce: q.enonce,
       detail: `Réponse : ${formatGivenText(q, given)} — Bonne réponse : ${describeCorrectText(q)} (${auto ? auto.points : 0}/${q.points})`,
       isCorrect: auto ? auto.correct : null,
+      media,
     };
   });
 }

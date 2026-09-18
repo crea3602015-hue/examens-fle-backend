@@ -34,6 +34,7 @@ model User {
 
   assignments  Assignment[]
   sessions     ExamSession[]
+  projectAssignments ProjectAssignment[]
 
   @@index([role])
 }
@@ -151,4 +152,52 @@ model AuditLog {
   action  String
   details String?
   at      DateTime @default(now())
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  titre       String
+  description String?
+  niveau      String
+  matiere     String   @default("Français")
+  statut      String   @default("brouillon") // brouillon | publié | archivé
+  media       String?  // image d'illustration, optionnelle
+  criteria    Json     // [{id, titre, points}] — la grille définie par l'admin
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments ProjectAssignment[]
+}
+
+model ProjectAssignment {
+  id        String @id @default(cuid())
+  projectId String
+  teacherId String?
+  classe    String?
+  groupe    String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  teacher User?   @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  entries ProjectEntry[]
+
+  @@index([teacherId])
+  @@index([projectId])
+}
+
+model ProjectEntry {
+  id           String   @id @default(cuid())
+  assignmentId String
+  nom          String
+  classe       String?
+  groupe       String?
+  scores       Json     @default("{}") // { criteriaId: pointsGiven }
+  total        Float    @default(0)
+  max          Float    @default(0)
+  pct          Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignment ProjectAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId])
 }

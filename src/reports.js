@@ -179,100 +179,96 @@ async function buildAttemptXlsx({ examTitle, matiere, teacherName, student, tota
   return wb.xlsx.writeBuffer();
 }
 
-function buildAttemptPdf({ examTitle, matiere, teacherName, student, total, max, pct, sections }) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
-    const chunks = [];
-    doc.on('data', c => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    doc.fontSize(20).font('Helvetica-Bold').text(examTitle);
-    doc.fontSize(11).font('Helvetica').fillColor('#555')
-      .text(`Matière : ${matiere}`)
-      .text(`Élève : ${student.nom}`)
-      .text(student.isSecondaire ? `Niveau : ${student.niveau || '—'}` : `Classe : ${student.classe || '—'} · Groupe : ${student.groupe || '—'}`)
-      .text(`Professeur : ${teacherName || '—'}`);
-    doc.moveDown();
-
-    doc.fillColor('#000').font('Helvetica-Bold').fontSize(16).text(`Total : ${total}/${max}`, { continued: true });
-    doc.fillColor(scoreColorHex(pct)).text(`  (${pct !== null ? pct + '%' : 'Non corrigé'})`);
-    doc.fillColor('#000');
-    doc.moveDown();
-
-    doc.font('Helvetica-Bold').fontSize(13).text('Points à travailler');
-    doc.moveDown(0.3);
-    let y = doc.y;
-    const barMaxWidth = 300;
-    sections.forEach(sec => {
-      if (y > 720) { doc.addPage(); y = 40; }
-      doc.font('Helvetica').fontSize(10).fillColor('#000').text(sec.titre, 40, y, { width: 150 });
-      doc.rect(200, y, barMaxWidth, 12).fill('#EEEEEE');
-      doc.rect(200, y, barMaxWidth * (sec.pct / 100), 12).fill(scoreColorHex(sec.pct));
-      doc.fillColor('#000').text(sec.pct + '%', 200 + barMaxWidth + 8, y);
-      y += 20;
-    });
-    doc.y = y + 15;
-    doc.x = 40;
-
-    sections.forEach(sec => {
-      if (doc.y > 700) doc.addPage();
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#000').text(sec.titre, 40, doc.y, { width: 500 });
-      (sec.questions || []).forEach(q => {
-        if (doc.y > 750) doc.addPage();
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text(q.enonce || '(question)', 40, doc.y, { width: 500 });
-        doc.font('Helvetica').fontSize(9).fillColor(q.isCorrect === true ? '#2F7D46' : q.isCorrect === false ? '#B3261E' : '#555')
-          .text(q.detail || '', 40, doc.y, { width: 500 });
-        doc.fillColor('#000').moveDown(0.4);
-      });
-      doc.moveDown(0.4);
-    });
-
-    doc.end();
-  });
+/** Fetches a remote image and returns a Buffer, or null on any failure (never
+    throws — a broken image link must not break the whole PDF). */
+async function fetchImageBuffer(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const arrayBuf = await res.arrayBuffer();
+    return Buffer.from(arrayBuf);
+  } catch (e) {
+    return null;
+  }
 }
 
-function buildBulkAttemptsPdf({ examTitle, matiere, teacherName, attempts }) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
-    const chunks = [];
-    doc.on('data', c => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
+/** Draws one student's full detailed sheet (header, total, chart, and every
+    question with the student's answer + correct answer + embedded image when
+    the question had one) onto an already-open pdfkit document at the current
+    page. Used by both the single-student export and the combined bulk export. */
+async function drawStudentSheet(doc, { examTitle, matiere, teacherName, student, total, max, pct, sections }) {
+  doc.fontSize(18).font('Helvetica-Bold').fillColor('#000').text(examTitle);
+  doc.fontSize(10).font('Helvetica').fillColor('#555')
+    .text(`Matière : ${matiere}`)
+    .text(`Élève : ${student.nom}`)
+    .text(student.isSecondaire ? `Niveau : ${student.niveau || '—'}` : `Classe : ${student.classe || '—'} · Groupe : ${student.groupe || '—'}`)
+    .text(`Professeur : ${teacherName || '—'}`);
+  doc.moveDown(0.5);
 
-    attempts.forEach((att, idx) => {
-      if (idx > 0) doc.addPage();
-      const { student, total, max, pct, sections } = att;
+  doc.fillColor('#000').font('Helvetica-Bold').fontSize(15).text(`Total : ${total}/${max}`, { continued: true });
+  doc.fillColor(scoreColorHex(pct)).text(`  (${pct !== null ? pct + '%' : 'Non corrigé'})`);
+  doc.fillColor('#000');
+  doc.moveDown(0.4);
 
-      doc.fontSize(18).font('Helvetica-Bold').fillColor('#000').text(examTitle);
-      doc.fontSize(10).font('Helvetica').fillColor('#555')
-        .text(`Matière : ${matiere}`)
-        .text(`Élève : ${student.nom}`)
-        .text(student.isSecondaire ? `Niveau : ${student.niveau || '—'}` : `Classe : ${student.classe || '—'} · Groupe : ${student.groupe || '—'}`)
-        .text(`Professeur : ${teacherName || '—'}`);
-      doc.moveDown(0.5);
-
-      doc.fillColor('#000').font('Helvetica-Bold').fontSize(15).text(`Total : ${total}/${max}`, { continued: true });
-      doc.fillColor(scoreColorHex(pct)).text(`  (${pct !== null ? pct + '%' : 'Non corrigé'})`);
-      doc.fillColor('#000');
-      doc.moveDown(0.5);
-
-      let y = doc.y;
-      const barMaxWidth = 260;
-      sections.forEach(sec => {
-        if (y > 740) { doc.addPage(); y = 40; }
-        doc.font('Helvetica').fontSize(9).fillColor('#000').text(sec.titre, 40, y, { width: 140 });
-        doc.rect(190, y, barMaxWidth, 10).fill('#EEEEEE');
-        doc.rect(190, y, barMaxWidth * (sec.pct / 100), 10).fill(scoreColorHex(sec.pct));
-        doc.fillColor('#000').fontSize(9).text(sec.pct + '%', 190 + barMaxWidth + 8, y);
-        y += 16;
-      });
-      doc.y = y + 10;
-      doc.x = 40;
-    });
-
-    doc.end();
+  // Diagramme de réussite par section
+  let y = doc.y;
+  const barMaxWidth = 260;
+  sections.forEach(sec => {
+    if (y > 740) { doc.addPage(); y = 40; }
+    doc.font('Helvetica').fontSize(9).fillColor('#000').text(sec.titre, 40, y, { width: 140 });
+    doc.rect(190, y, barMaxWidth, 10).fill('#EEEEEE');
+    doc.rect(190, y, barMaxWidth * (sec.pct / 100), 10).fill(scoreColorHex(sec.pct));
+    doc.fillColor('#000').fontSize(9).text(sec.pct + '%', 190 + barMaxWidth + 8, y);
+    y += 16;
   });
+  doc.y = y + 12;
+  doc.x = 40;
+
+  // Détail question par question, avec l'image de la question si elle en avait une
+  for (const sec of sections) {
+    if (doc.y > 700) doc.addPage();
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text(sec.titre, 40, doc.y, { width: 500 });
+    for (const q of (sec.questions || [])) {
+      if (doc.y > 740) doc.addPage();
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#000').text(q.enonce || '(question)', 40, doc.y, { width: 500 });
+      if (q.media) {
+        const buf = await fetchImageBuffer(q.media);
+        if (buf) {
+          if (doc.y > 620) doc.addPage();
+          try { doc.image(buf, 40, doc.y, { fit: [200, 150] }); doc.y += 155; doc.x = 40; }
+          catch (e) { /* format non supporté par pdfkit — on continue sans planter */ }
+        }
+      }
+      doc.font('Helvetica').fontSize(9).fillColor(q.isCorrect === true ? '#2F7D46' : q.isCorrect === false ? '#B3261E' : '#555')
+        .text(q.detail || '', 40, doc.y, { width: 500 });
+      doc.fillColor('#000').moveDown(0.4);
+      doc.x = 40;
+    }
+    doc.moveDown(0.4);
+  }
+}
+
+async function buildAttemptPdf(data) {
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  const chunks = [];
+  doc.on('data', c => chunks.push(c));
+  const done = new Promise((resolve, reject) => { doc.on('end', () => resolve(Buffer.concat(chunks))); doc.on('error', reject); });
+  await drawStudentSheet(doc, data);
+  doc.end();
+  return done;
+}
+
+async function buildBulkAttemptsPdf({ examTitle, matiere, teacherName, attempts }) {
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  const chunks = [];
+  doc.on('data', c => chunks.push(c));
+  const done = new Promise((resolve, reject) => { doc.on('end', () => resolve(Buffer.concat(chunks))); doc.on('error', reject); });
+  for (let i = 0; i < attempts.length; i++) {
+    if (i > 0) doc.addPage();
+    await drawStudentSheet(doc, { examTitle, matiere, teacherName, ...attempts[i] });
+  }
+  doc.end();
+  return done;
 }
 
 module.exports = { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf };
