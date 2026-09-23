@@ -54,6 +54,7 @@ router.post('/', async (req, res) => {
     secret,
     reponses: attempt.reponses,
     examTitre: session.exam.titre,
+    sessionToken: session.token,
   });
 });
 
@@ -99,9 +100,17 @@ router.post('/:id/submit', async (req, res) => {
 
   await prisma.attempt.update({
     where: { id: attempt.id },
-    data: { statut: 'soumis', submittedAt: new Date(), reponses: reponses ?? attempt.reponses },
+    data: { statut: 'soumis', submittedAt: new Date(), away: false, reponses: reponses ?? attempt.reponses },
   });
   await logAction('Copie soumise', `${attempt.nom} — session ${attempt.session.token}`);
+
+  // Si tous les élèves connectés ont maintenant envoyé leur copie, on marque la
+  // session comme terminée automatiquement.
+  const allAttempts = await prisma.attempt.findMany({ where: { sessionId: attempt.sessionId } });
+  if (allAttempts.length > 0 && allAttempts.every(a => a.statut === 'soumis')) {
+    await prisma.examSession.update({ where: { id: attempt.sessionId }, data: { statut: 'terminé', endedAt: new Date() } });
+  }
+
   res.json({ ok: true });
 });
 

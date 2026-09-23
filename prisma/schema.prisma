@@ -201,3 +201,20 @@ model ProjectEntry {
 
   @@index([assignmentId])
 }
+
+// Fichiers importés (images/audio) — stockés en base pour survivre aux
+// redéploiements (le disque de Render est éphémère). À garder petits : une
+// limite de taille est appliquée à l'envoi.
+model UploadedFile {
+  id        String   @id @default(cuid())
+  mimeType  String
+  data      String   // base64
+  size      Int
+  createdAt DateTime @default(now())
+}
+
+// Réglages de l'établissement — un seul enregistrement ("singleton").
+model Settings {
+  id           String  @id @default("singleton")
+  schoolLogoId String?
+}

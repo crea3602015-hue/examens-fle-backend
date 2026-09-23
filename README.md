@@ -186,6 +186,24 @@ obtenu via `POST /api/auth/login`.
   (question par question), pas seulement un résumé
 - Lien d'invitation professeur partageable (`?access=1`) depuis la page
   « Professeurs »
+- Import de fichiers (images/audio) stocké en base de données — `UploadedFile`,
+  routes `POST/GET /api/uploads` — pour ne plus dépendre de liens externes
+  fragiles (imgur, etc.) qui ne s'affichaient pas dans les exports
+- Logo de l'établissement (réglage global) — `Settings`, routes
+  `/api/settings` — intégré automatiquement dans les Word et PDF générés
+- Audio par section (en plus de l'audio par question), joué à la présentation
+- Module Projets : import d'image, export Word, export PDF individuel avec
+  espacement correct, export PDF groupé (`/api/export/project-entry*`,
+  `/api/export/project-entries-bulk.pdf`)
+- Rapport pédagogique global en PDF coloré, pour la direction
+  (`/api/export/global-report.pdf`)
+- Présence : la session passe automatiquement à « Terminé » quand tous les
+  élèves ont soumis ; couleur orange pour « terminé », rouge pour « a quitté
+  la page », avec bannière clignotante + bip sonore répété côté professeur
+- QR code pour le lien d'invitation professeur
+- Suppression d'une session (et de son historique) à la demande de l'admin ou
+  du professeur — `DELETE /api/sessions/:id`
+- Code de session visible sur l'écran d'examen de l'élève
 
 **Important** : ce schéma a changé plusieurs fois depuis la version initiale. Le
 Build Command `npx prisma db push --accept-data-loss` (voir étape 5 plus haut)

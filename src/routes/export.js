@@ -3,10 +3,29 @@ const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { sectionPoints } = require('../grading');
 const { describeSectionQuestions } = require('../questionText');
-const { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf } = require('../reports');
+const {
+  reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf,
+  buildProjectEntryPdf, buildBulkProjectEntriesPdf, buildGlobalReportPdf,
+} = require('../reports');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('TEACHER', 'ADMIN'));
+
+/** Fetches the school logo (if configured) as a Buffer + file extension, ready
+    to embed in a PDF/Excel export. Never throws — a missing/broken logo must
+    never break an export. */
+async function getLogo() {
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+    if (!settings || !settings.schoolLogoId) return { logoBuffer: null, logoExt: null };
+    const file = await prisma.uploadedFile.findUnique({ where: { id: settings.schoolLogoId } });
+    if (!file) return { logoBuffer: null, logoExt: null };
+    const ext = file.mimeType.includes('png') ? 'png' : file.mimeType.includes('jpeg') || file.mimeType.includes('jpg') ? 'jpeg' : 'png';
+    return { logoBuffer: Buffer.from(file.data, 'base64'), logoExt: ext };
+  } catch (e) {
+    return { logoBuffer: null, logoExt: null };
+  }
+}
 
 function csvEscape(v) {
   const s = String(v === undefined || v === null ? '' : v);
@@ -97,7 +116,8 @@ async function buildClassExportData(req) {
 router.get('/results.xlsx', async (req, res) => {
   const data = await buildClassExportData(req);
   if (!data) return res.status(404).json({ error: 'Aucun résultat à exporter pour ce filtre.' });
-  const buf = await buildResultsXlsx(data);
+  const { logoBuffer, logoExt } = await getLogo();
+  const buf = await buildResultsXlsx({ ...data, logoBuffer, logoExt });
   const filename = reportFilename(data.examTitle || 'resultats', data.grouping) + '.xlsx';
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -108,7 +128,8 @@ router.get('/results.xlsx', async (req, res) => {
 router.get('/results.pdf', async (req, res) => {
   const data = await buildClassExportData(req);
   if (!data) return res.status(404).json({ error: 'Aucun résultat à exporter pour ce filtre.' });
-  const buf = await buildResultsPdf(data);
+  const { logoBuffer } = await getLogo();
+  const buf = await buildResultsPdf({ ...data, logoBuffer });
   const filename = reportFilename(data.examTitle || 'resultats', data.grouping) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -157,7 +178,8 @@ router.get('/attempt/:attemptId/xlsx', async (req, res) => {
 router.get('/attempt/:attemptId/pdf', async (req, res) => {
   const data = await buildAttemptExportData(req, req.params.attemptId);
   if (!data) return res.status(404).json({ error: 'Copie introuvable.' });
-  const buf = await buildAttemptPdf(data);
+  const { logoBuffer } = await getLogo();
+  const buf = await buildAttemptPdf({ ...data, logoBuffer });
   const filename = reportFilename(data.student.nom, data.grouping) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -189,7 +211,8 @@ router.get('/results-bulk.pdf', async (req, res) => {
     };
   });
 
-  const buf = await buildBulkAttemptsPdf({ examTitle: exam.titre, matiere: exam.matiere, teacherName, attempts: attemptsData });
+  const { logoBuffer } = await getLogo();
+  const buf = await buildBulkAttemptsPdf({ examTitle: exam.titre, matiere: exam.matiere, teacherName, attempts: attemptsData, logoBuffer });
   const grouping = detectGrouping(withResult);
   const filename = reportFilename((exam.titre || 'resultats') + '_toutes_les_copies', grouping) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
@@ -201,7 +224,8 @@ router.get('/results-bulk.pdf', async (req, res) => {
 router.get('/project-results.xlsx', async (req, res) => {
   const data = await buildProjectExportData(req);
   if (!data) return res.status(404).json({ error: 'Aucune note à exporter pour ce filtre.' });
-  const buf = await buildResultsXlsx(data);
+  const { logoBuffer, logoExt } = await getLogo();
+  const buf = await buildResultsXlsx({ ...data, logoBuffer, logoExt });
   const filename = reportFilename(data.examTitle || 'projet', data.grouping) + '.xlsx';
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -212,10 +236,119 @@ router.get('/project-results.xlsx', async (req, res) => {
 router.get('/project-results.pdf', async (req, res) => {
   const data = await buildProjectExportData(req);
   if (!data) return res.status(404).json({ error: 'Aucune note à exporter pour ce filtre.' });
-  const buf = await buildResultsPdf(data);
+  const { logoBuffer } = await getLogo();
+  const buf = await buildResultsPdf({ ...data, logoBuffer });
   const filename = reportFilename(data.examTitle || 'projet', data.grouping) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
+});
+
+async function buildProjectEntryExportData(req, entryId) {
+  const entry = await prisma.projectEntry.findUnique({
+    where: { id: entryId },
+    include: { assignment: { include: { project: true, teacher: { select: { name: true } } } } },
+  });
+  if (!entry) return null;
+  if (req.user.role !== 'ADMIN' && entry.assignment.teacherId !== req.user.sub) return null;
+  const project = entry.assignment.project;
+  const isSecondaire = project.niveau === 'Secondaire';
+  const criteriaScores = project.criteria.map(c => ({ titre: c.titre, points: c.points, given: entry.scores[c.id] ?? null }));
+  return {
+    projectTitle: project.titre, matiere: project.matiere, teacherName: entry.assignment.teacher?.name,
+    student: { nom: entry.nom, classe: entry.classe, groupe: entry.groupe, niveau: entry.classe, isSecondaire },
+    total: entry.total, max: entry.max, pct: entry.pct, criteriaScores,
+    grouping: { isSecondaire, niveau: isSecondaire ? entry.classe : null, classe: !isSecondaire ? entry.classe : null, groupe: !isSecondaire ? entry.groupe : null },
+  };
+}
+
+// GET /api/export/project-entry/:entryId/pdf — la feuille d'un seul élève, espacement généreux
+router.get('/project-entry/:entryId/pdf', async (req, res) => {
+  const data = await buildProjectEntryExportData(req, req.params.entryId);
+  if (!data) return res.status(404).json({ error: 'Note introuvable.' });
+  const { logoBuffer } = await getLogo();
+  const buf = await buildProjectEntryPdf({ ...data, logoBuffer });
+  const filename = reportFilename(data.student.nom, data.grouping) + '.pdf';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
+});
+
+// GET /api/export/project-entries-bulk.pdf?projectId=...&assignmentId=... — une feuille par élève, un seul PDF
+router.get('/project-entries-bulk.pdf', async (req, res) => {
+  const where = {};
+  if (req.query.assignmentId) where.assignmentId = req.query.assignmentId;
+  else if (req.query.projectId) where.assignment = { projectId: req.query.projectId };
+  if (req.user.role !== 'ADMIN') where.assignment = { ...(where.assignment || {}), teacherId: req.user.sub };
+  const entries = await prisma.projectEntry.findMany({
+    where, include: { assignment: { include: { project: true, teacher: { select: { name: true } } } } }, orderBy: { nom: 'asc' },
+  });
+  if (entries.length === 0) return res.status(404).json({ error: 'Aucune note à exporter pour ce filtre.' });
+  const project = entries[0].assignment.project;
+  const teacherName = entries[0].assignment.teacher?.name;
+  const isSecondaire = project.niveau === 'Secondaire';
+
+  const entriesData = entries.map(e => ({
+    student: { nom: e.nom, classe: e.classe, groupe: e.groupe, niveau: e.classe, isSecondaire },
+    total: e.total, max: e.max, pct: e.pct,
+    criteriaScores: project.criteria.map(c => ({ titre: c.titre, points: c.points, given: e.scores[c.id] ?? null })),
+  }));
+
+  const { logoBuffer } = await getLogo();
+  const buf = await buildBulkProjectEntriesPdf({ projectTitle: project.titre, matiere: project.matiere, teacherName, entries: entriesData, logoBuffer });
+  const classes = [...new Set(entries.map(e => e.classe).filter(Boolean))];
+  const groupes = [...new Set(entries.map(e => e.groupe).filter(Boolean))];
+  const grouping = {
+    isSecondaire, niveau: isSecondaire && classes.length === 1 ? classes[0] : null,
+    classe: !isSecondaire && classes.length === 1 ? classes[0] : null, groupe: !isSecondaire && groupes.length === 1 ? groupes[0] : null,
+  };
+  const filename = reportFilename((project.titre || 'projet') + '_toutes_les_copies', grouping) + '.pdf';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
+});
+
+// GET /api/export/global-report.pdf — rapport pédagogique complet, coloré, pour la direction (admin uniquement)
+router.get('/global-report.pdf', requireRole('ADMIN'), async (req, res) => {
+  const [examCount, teacherCount, attempts] = await Promise.all([
+    prisma.exam.count(),
+    prisma.user.count({ where: { role: 'TEACHER' } }),
+    prisma.attempt.findMany({ where: { statut: 'soumis' }, include: { result: true, session: { include: { exam: { select: { niveau: true, sections: true } } } } } }),
+  ]);
+  const withResult = attempts.filter(a => a.result);
+  const avgPct = withResult.length ? Math.round(withResult.reduce((s, a) => s + a.result.pct, 0) / withResult.length) : 0;
+  const successRate = withResult.length ? Math.round((100 * withResult.filter(a => a.result.pct >= 50).length) / withResult.length) : 0;
+  const byLevel = {};
+  ['Préscolaire', 'Primaire', 'Secondaire'].forEach(niv => {
+    const rel = withResult.filter(a => a.session.exam.niveau === niv);
+    byLevel[niv] = rel.length ? Math.round(rel.reduce((s, a) => s + a.result.pct, 0) / rel.length) : null;
+  });
+
+  const classes = [...new Set(attempts.map(a => a.classe).filter(Boolean))];
+  const classBreakdown = [];
+  classes.forEach(cls => {
+    const rel = withResult.filter(a => a.classe === cls);
+    if (rel.length === 0) return;
+    const agg = {};
+    rel.forEach(a => {
+      a.session.exam.sections.forEach(sec => {
+        const score = a.result.sectionScores[sec.id]; const max = sectionPoints(sec);
+        if (score === undefined || !max) return;
+        agg[sec.titre] = agg[sec.titre] || { sum: 0, max: 0 };
+        agg[sec.titre].sum += score; agg[sec.titre].max += max;
+      });
+    });
+    const sections = Object.entries(agg).map(([titre, v]) => ({ titre, pct: Math.round((100 * v.sum) / v.max) })).sort((a, b) => a.pct - b.pct);
+    if (sections.length) classBreakdown.push({ classe: cls, sections });
+  });
+
+  const { logoBuffer } = await getLogo();
+  const buf = await buildGlobalReportPdf({
+    stats: { examCount, teacherCount, submittedCount: attempts.length, avgPct, successRate },
+    byLevel, classBreakdown, logoBuffer,
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="rapport_pedagogique_global.pdf"');
   res.send(buf);
 });
 

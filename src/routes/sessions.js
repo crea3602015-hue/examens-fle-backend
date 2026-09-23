@@ -92,4 +92,16 @@ router.get('/:id/live', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
   });
 });
 
+// DELETE /api/sessions/:id — admin uniquement : efface la session et tout son historique
+router.delete('/:id', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
+  const session = await prisma.examSession.findUnique({ where: { id: req.params.id } });
+  if (!session) return res.status(404).json({ error: 'Session introuvable.' });
+  if (req.user.role !== 'ADMIN' && session.teacherId !== req.user.sub) {
+    return res.status(403).json({ error: "Cette session n'est pas la vôtre." });
+  }
+  await prisma.examSession.delete({ where: { id: session.id } });
+  await logAction('Session et historique supprimés', session.token);
+  res.json({ ok: true });
+});
+
 module.exports = router;

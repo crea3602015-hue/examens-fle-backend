@@ -10,6 +10,8 @@ const quizRoutes = require('./routes/quiz');
 const projectRoutes = require('./routes/projects');
 const projectAssignmentRoutes = require('./routes/projectAssignments');
 const projectEntryRoutes = require('./routes/projectEntries');
+const uploadRoutes = require('./routes/uploads');
+const settingsRoutes = require('./routes/settings');
 const accessRequestRoutes = require('./routes/accessRequests');
 const examRoutes = require('./routes/exams');
 const assignmentRoutes = require('./routes/assignments');
@@ -31,7 +33,7 @@ app.use(cors({
   },
 }));
 
-app.use(express.json({ limit: '2mb' })); // 2mb : suffisant pour un dessin encodé en base64
+app.use(express.json({ limit: '4mb' })); // couvre un dessin ou un fichier importé (jusqu'à 2 Mo) encodé en base64
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
@@ -42,6 +44,8 @@ app.use('/api/quiz', quizRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/project-assignments', projectAssignmentRoutes);
 app.use('/api/project-entries', projectEntryRoutes);
+app.use('/api/uploads', uploadRoutes);
+app.use('/api/settings', settingsRoutes);
 app.use('/api/access-requests', accessRequestRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/assignments', assignmentRoutes);
