@@ -204,6 +204,18 @@ obtenu via `POST /api/auth/login`.
 - Suppression d'une session (et de son historique) à la demande de l'admin ou
   du professeur — `DELETE /api/sessions/:id`
 - Code de session visible sur l'écran d'examen de l'élève
+- Sécurité renforcée : en-têtes de sécurité (helmet), limitation des tentatives
+  de connexion (anti force-brute), message de connexion générique (ne révèle
+  plus si un email existe dans la base)
+- Session : un seul bouton pour démarrer / mettre en pause / reprendre /
+  fermer / redémarrer (`PATCH /api/sessions/:id/status`), nouveau statut
+  `en_pause` qui bloque les nouvelles connexions élèves
+- Historique de l'audit : possibilité de tout effacer (`DELETE /api/audit`)
+- Projets : export PDF de la fiche descriptive vierge (aperçu), tableau de
+  critères correctement espacé, accès professeur au même aperçu
+- Quiz façon Kahoot : description du quiz, avatars emoji pour les élèves,
+  classement avec trophées 🥇🥈🥉 en direct côté professeur, relance d'une
+  nouvelle manche sans changer de code (`POST /api/quiz/sessions/:code/relaunch`)
 
 **Important** : ce schéma a changé plusieurs fois depuis la version initiale. Le
 Build Command `npx prisma db push --accept-data-loss` (voir étape 5 plus haut)

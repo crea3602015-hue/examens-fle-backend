@@ -5,7 +5,7 @@ const { sectionPoints } = require('../grading');
 const { describeSectionQuestions } = require('../questionText');
 const {
   reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf,
-  buildProjectEntryPdf, buildBulkProjectEntriesPdf, buildGlobalReportPdf,
+  buildProjectEntryPdf, buildBulkProjectEntriesPdf, buildGlobalReportPdf, buildProjectDescriptionPdf,
 } = require('../reports');
 
 const router = express.Router();
@@ -261,6 +261,22 @@ async function buildProjectEntryExportData(req, entryId) {
     grouping: { isSecondaire, niveau: isSecondaire ? entry.classe : null, classe: !isSecondaire ? entry.classe : null, groupe: !isSecondaire ? entry.groupe : null },
   };
 }
+
+// GET /api/export/project/:projectId/pdf — fiche descriptive vierge du projet (depuis l'Aperçu)
+router.get('/project/:projectId/pdf', async (req, res) => {
+  const project = await prisma.project.findUnique({ where: { id: req.params.projectId } });
+  if (!project) return res.status(404).json({ error: 'Projet introuvable.' });
+  if (req.user.role !== 'ADMIN') {
+    const has = await prisma.projectAssignment.count({ where: { projectId: project.id, teacherId: req.user.sub } });
+    if (!has) return res.status(403).json({ error: "Ce projet ne vous est pas assigné." });
+  }
+  const maxTotal = (project.criteria || []).reduce((s, c) => s + Number(c.points || 0), 0);
+  const { logoBuffer } = await getLogo();
+  const buf = await buildProjectDescriptionPdf({ project: { ...project, maxTotal }, logoBuffer });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${reportFilename(project.titre, {})}.pdf"`);
+  res.send(buf);
+});
 
 // GET /api/export/project-entry/:entryId/pdf — la feuille d'un seul élève, espacement généreux
 router.get('/project-entry/:entryId/pdf', async (req, res) => {

@@ -286,7 +286,47 @@ async function buildBulkAttemptsPdf({ examTitle, matiere, teacherName, attempts,
   return done;
 }
 
-module.exports = { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf, buildProjectEntryPdf, buildBulkProjectEntriesPdf, buildGlobalReportPdf };
+function buildProjectDescriptionPdf({ project, logoBuffer }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    drawLogo(doc, logoBuffer);
+
+    doc.fontSize(20).font('Helvetica-Bold').fillColor('#000').text(project.titre);
+    doc.fontSize(10).font('Helvetica').fillColor('#555').text(`Niveau : ${project.niveau} · Matière : ${project.matiere} — Total : ${project.maxTotal} points`);
+    doc.moveDown(0.6);
+    if (project.description) {
+      doc.font('Helvetica').fontSize(11).fillColor('#000').text(project.description, { width: 500 });
+      doc.moveDown(0.6);
+    }
+
+    doc.font('Helvetica-Bold').fontSize(13).text('Grille d\'évaluation');
+    doc.moveDown(0.4);
+    // En-tête de tableau
+    let y = doc.y;
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#555');
+    doc.text('Critère', 40, y, { width: 320 });
+    doc.text('Points', 380, y, { width: 100 });
+    y += 18;
+    doc.moveTo(40, y).lineTo(500, y).strokeColor('#DDD').stroke();
+    y += 10;
+    doc.font('Helvetica').fontSize(10).fillColor('#000');
+    (project.criteria || []).forEach(c => {
+      if (y > 740) { doc.addPage(); y = 40; }
+      doc.text(c.titre, 40, y, { width: 320 });
+      doc.text(`/ ${c.points}`, 380, y, { width: 100 });
+      y += 26;
+    });
+    doc.y = y;
+
+    doc.end();
+  });
+}
+
+module.exports = { reportFilename, buildResultsXlsx, buildResultsPdf, buildAttemptXlsx, buildAttemptPdf, buildBulkAttemptsPdf, buildProjectEntryPdf, buildBulkProjectEntriesPdf, buildGlobalReportPdf, buildProjectDescriptionPdf };
 
 /* =========================================================
    Export PDF — copie d'un projet (grille d'évaluation) pour un élève

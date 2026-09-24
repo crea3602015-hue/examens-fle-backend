@@ -22,6 +22,7 @@ router.post('/', async (req, res) => {
   const session = await prisma.examSession.findUnique({ where: { token: String(token).toUpperCase() }, include: { exam: true } });
   if (!session) return res.status(404).json({ error: 'Session introuvable.' });
   if (session.statut === 'préparé') return res.status(409).json({ error: "La session n'a pas encore été démarrée par le professeur." });
+  if (session.statut === 'en_pause') return res.status(409).json({ error: 'La session est actuellement en pause. Attendez que le professeur la reprenne.' });
   if (session.statut === 'terminé') return res.status(409).json({ error: 'Cette session est terminée.' });
 
   let attempt = await prisma.attempt.findFirst({

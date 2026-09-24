@@ -63,7 +63,34 @@ router.post('/', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
   res.status(201).json({ id: session.id, token: session.token, statut: session.statut, examId: session.examId });
 });
 
-// POST /api/sessions/:id/start — professeur "Démarrer la session"
+// PATCH /api/sessions/:id/status { statut } — un seul bouton qui fait tout :
+// démarrer, mettre en pause, reprendre, fermer, ou redémarrer une session.
+const ALLOWED_TRANSITIONS = {
+  'préparé': ['en_cours'],
+  'en_cours': ['en_pause', 'terminé'],
+  'en_pause': ['en_cours', 'terminé'],
+  'terminé': ['en_cours'], // redémarrer
+};
+router.patch('/:id/status', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
+  const { statut } = req.body || {};
+  const session = await prisma.examSession.findUnique({ where: { id: req.params.id } });
+  if (!session) return res.status(404).json({ error: 'Session introuvable.' });
+  if (req.user.role !== 'ADMIN' && session.teacherId !== req.user.sub) {
+    return res.status(403).json({ error: "Cette session n'est pas la vôtre." });
+  }
+  const allowed = ALLOWED_TRANSITIONS[session.statut] || [];
+  if (!allowed.includes(statut)) {
+    return res.status(400).json({ error: `Impossible de passer de « ${session.statut} » à « ${statut} ».` });
+  }
+  const data = { statut };
+  if (statut === 'en_cours' && !session.startedAt) data.startedAt = new Date();
+  if (statut === 'terminé') data.endedAt = new Date();
+  const updated = await prisma.examSession.update({ where: { id: session.id }, data });
+  await logAction(`Session : ${statut}`, updated.token);
+  res.json({ ok: true, statut: updated.statut });
+});
+
+// POST /api/sessions/:id/start — conservé pour compatibilité (identique à statut=en_cours)
 router.post('/:id/start', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
   const session = await prisma.examSession.findUnique({ where: { id: req.params.id } });
   if (!session) return res.status(404).json({ error: 'Session introuvable.' });

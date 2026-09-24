@@ -2,6 +2,8 @@ require('dotenv').config();
 require('express-async-errors');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teachers');
@@ -24,6 +26,11 @@ const exportRoutes = require('./routes/export');
 
 const app = express();
 
+// En-têtes de sécurité standards (protège contre le détournement de clics,
+// le sniffing MIME, etc.). "crossOrigin*" désactivés car nos images/fichiers
+// doivent pouvoir être chargés depuis le domaine du frontend.
+app.use(helmet({ crossOriginResourcePolicy: false, crossOriginEmbedderPolicy: false }));
+
 // N'accepte que les origines déclarées dans CORS_ORIGINS (le domaine du frontend).
 const allowedOrigins = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
@@ -34,6 +41,14 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '4mb' })); // couvre un dessin ou un fichier importé (jusqu'à 2 Mo) encodé en base64
+
+// Limite les tentatives de connexion — freine les attaques par force brute sur
+// les mots de passe (20 essais / 15 min par adresse IP).
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Trop de tentatives de connexion. Réessayez dans quelques minutes.' },
+});
+app.use('/api/auth/login', loginLimiter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 

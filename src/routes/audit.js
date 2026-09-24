@@ -12,4 +12,10 @@ router.get('/', async (req, res) => {
   res.json(list);
 });
 
+// DELETE /api/audit — vide tout l'historique
+router.delete('/', async (req, res) => {
+  await prisma.auditLog.deleteMany({});
+  res.json({ ok: true });
+});
+
 module.exports = router;

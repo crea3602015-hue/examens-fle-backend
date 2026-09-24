@@ -13,11 +13,12 @@ router.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   const user = await prisma.user.findUnique({ where: { email: String(email).toLowerCase().trim() } });
-  if (!user) return res.status(401).json({ error: 'Aucun compte trouvé avec cet email.' });
+  const GENERIC = 'Email ou mot de passe incorrect.';
+  if (!user) return res.status(401).json({ error: GENERIC });
   if (user.status !== 'active') return res.status(403).json({ error: 'Ce compte est désactivé. Contactez la coordination.' });
 
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: 'Mot de passe incorrect.' });
+  if (!ok) return res.status(401).json({ error: GENERIC });
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
   await logAction(user.role === 'ADMIN' ? 'Connexion administrateur' : 'Connexion professeur', user.name);

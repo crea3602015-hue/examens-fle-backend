@@ -82,7 +82,7 @@ router.get('/sessions', requireAuth, requireRole('TEACHER', 'ADMIN'), (req, res)
 
 // POST /api/quiz/sessions — le professeur confirme le quiz (généré par IA ou modifié à la main)
 router.post('/sessions', requireAuth, requireRole('TEACHER', 'ADMIN'), (req, res) => {
-  const { title, questions } = req.body || {};
+  const { title, description, questions } = req.body || {};
   if (!title || !Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: 'Titre et au moins une question sont requis.' });
   }
@@ -91,7 +91,7 @@ router.post('/sessions', requireAuth, requireRole('TEACHER', 'ADMIN'), (req, res
   })).filter(q => q.enonce && q.options.length >= 2);
   if (clean.length === 0) return res.status(400).json({ error: 'Aucune question valide.' });
 
-  const session = store.createSession({ teacherId: req.user.sub, title, questions: clean });
+  const session = store.createSession({ teacherId: req.user.sub, title, description, questions: clean });
   res.status(201).json({ code: session.code });
 });
 
@@ -111,13 +111,26 @@ router.post('/sessions/:code/start', requireAuth, requireRole('TEACHER', 'ADMIN'
   res.json({ ok: true });
 });
 
-// GET /api/quiz/sessions/:code/live — suivi en direct pour le professeur
+// POST /api/quiz/sessions/:code/relaunch — relance une nouvelle manche sur le même code
+// (efface les joueurs et les scores, garde les mêmes questions, retour au lobby)
+router.post('/sessions/:code/relaunch', requireAuth, requireRole('TEACHER', 'ADMIN'), (req, res) => {
+  const session = ownedSessionOr403(req, res); if (!session) return;
+  session.students.clear();
+  session.status = 'lobby';
+  res.json({ ok: true });
+});
+
+// GET /api/quiz/sessions/:code/live — suivi en direct pour le professeur, avec classement
 router.get('/sessions/:code/live', requireAuth, requireRole('TEACHER', 'ADMIN'), (req, res) => {
   const session = ownedSessionOr403(req, res); if (!session) return;
-  const students = Array.from(session.students.values()).map(s => ({
-    nom: s.nom, index: s.index, total: session.questions.length, score: s.score, finished: s.finished,
-  })).sort((a, b) => (b.finished - a.finished) || (b.index - a.index));
-  res.json({ status: session.status, title: session.title, questionCount: session.questions.length, students });
+  const students = Array.from(session.students.values())
+    .map(s => ({
+      nom: s.nom, avatar: s.avatar || '🙂', index: s.index, total: session.questions.length,
+      score: s.score, finished: s.finished, finishedAt: s.finishedAt || null,
+    }))
+    .sort((a, b) => (b.finished - a.finished) || (b.score - a.score) || ((a.finishedAt || Infinity) - (b.finishedAt || Infinity)));
+  students.forEach((s, i) => { s.rank = i + 1; });
+  res.json({ status: session.status, title: session.title, description: session.description, questionCount: session.questions.length, students });
 });
 
 // DELETE /api/quiz/sessions/:code — réinitialiser : efface tout immédiatement
@@ -131,21 +144,24 @@ router.delete('/sessions/:code', requireAuth, requireRole('TEACHER', 'ADMIN'), (
 router.get('/sessions/by-code/:code', (req, res) => {
   const session = store.get(req.params.code);
   if (!session) return res.status(404).json({ error: 'Code de quiz introuvable ou expiré.' });
-  res.json({ title: session.title, status: session.status, questionCount: session.questions.length });
+  res.json({ title: session.title, description: session.description, status: session.status, questionCount: session.questions.length });
 });
 
-// POST /api/quiz/sessions/:code/join — PUBLIC { nom }
+// POST /api/quiz/sessions/:code/join — PUBLIC { nom, avatar }
 router.post('/sessions/:code/join', (req, res) => {
   const session = store.get(req.params.code);
   if (!session) return res.status(404).json({ error: 'Code de quiz introuvable ou expiré.' });
   if (session.status === 'ended') return res.status(409).json({ error: 'Ce quiz est terminé.' });
-  const { nom } = req.body || {};
+  const { nom, avatar } = req.body || {};
   if (!nom || !String(nom).trim()) return res.status(400).json({ error: 'Nom requis.' });
 
   const secret = nanoid(20);
-  session.students.set(String(nom).trim(), { nom: String(nom).trim(), secret, index: 0, score: 0, finished: false, joinedAt: Date.now() });
+  session.students.set(String(nom).trim(), {
+    nom: String(nom).trim(), avatar: avatar || '🙂', secret, index: 0, score: 0,
+    finished: false, finishedAt: null, joinedAt: Date.now(),
+  });
   res.status(201).json({
-    secret, title: session.title,
+    secret, title: session.title, description: session.description,
     questions: session.questions.map(q => ({ enonce: q.enonce, options: q.options })), // jamais "correct"
   });
 });
@@ -174,7 +190,7 @@ router.post('/sessions/:code/submit', (req, res) => {
   const answers = (req.body || {}).answers || [];
   let score = 0;
   session.questions.forEach((q, i) => { if (Number(answers[i]) === q.correct) score++; });
-  student.score = score; student.finished = true; student.index = session.questions.length;
+  student.score = score; student.finished = true; student.index = session.questions.length; student.finishedAt = Date.now();
   res.json({ ok: true, score, total: session.questions.length });
 });
 

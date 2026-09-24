@@ -13,12 +13,12 @@ function genCode() {
   return code;
 }
 
-function createSession({ teacherId, title, questions }) {
+function createSession({ teacherId, title, description, questions }) {
   const code = genCode();
   const session = {
-    code, teacherId, title, questions, // questions: [{enonce, options:[...], correct: index}]
+    code, teacherId, title, description: description || '', questions, // questions: [{enonce, options:[...], correct: index}]
     status: 'lobby', // lobby | running | ended
-    students: new Map(), // name -> {secret, index, score, finished, joinedAt}
+    students: new Map(), // name -> {secret, avatar, index, score, finished, joinedAt, finishedAt}
     createdAt: Date.now(),
   };
   sessions.set(code, session);
