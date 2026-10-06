@@ -10,6 +10,7 @@ function describeCorrectText(q) {
     case 'texte_trous': return q.correct || '—';
     case 'association': return (q.pairs || []).map(p => `${p.left} → ${p.right}`).join(' ; ') || '—';
     case 'classement': return (q.items || []).join(' → ') || '—';
+    case 'classification': return (q.elements || []).map(e => `${e.texte} → ${e.categorie}`).join(' ; ') || '—';
     case 'image_choix': return (q.options || [])[q.correct]?.label || (q.options || [])[q.correct]?.image || '—';
     case 'association_images': return (q.pairs || []).map(p => `${p.left.label || p.left.image} → ${p.right.label || p.right.image}`).join(' ; ') || '—';
     default: return '—';
@@ -24,6 +25,7 @@ function formatGivenText(q, given) {
     case 'vrai_faux': return given ? 'Vrai' : 'Faux';
     case 'association': return Object.entries(given || {}).map(([l, r]) => `${l} → ${r}`).join(' ; ') || '(sans réponse)';
     case 'classement': return (given || []).join(' → ');
+    case 'classification': return (q.elements || []).map((e, i) => `${e.texte} → ${(given || {})[i] || '—'}`).join(' ; ') || '(sans réponse)';
     case 'image_choix': { const o = (q.options || [])[given]; return o ? (o.label || o.image) : String(given); }
     case 'association_images': {
       const g = given || {};
@@ -46,11 +48,16 @@ function describeSectionQuestions(sec, reponses, autoDetail, manualScores, oralN
     const isImageMedia = q.media && !/\.(mp3|wav|m4a|ogg)(\?.*)?$/i.test(q.media);
     const media = isImageMedia ? q.media : null;
     if (q.type === 'production_orale') {
-      return { enonce: q.enonce || 'Production orale', detail: `Note manuelle : ${oralNote ?? '—'}/${q.points}`, isCorrect: null, media };
+      const bd = manualScores ? manualScores['crit:' + q.id] : null;
+      let grille = '';
+      if ((q.criteres || []).length && bd && typeof bd === 'object') {
+        grille = 'Grille — ' + q.criteres.map(c => `${c.titre} : ${bd[c.id] ?? '—'}/${c.points}`).join(' ; ') + ' — ';
+      }
+      return { enonce: q.enonce || 'Production orale', detail: `${grille}Note : ${oralNote ?? '—'}/${q.points}`, isCorrect: null, media };
     }
     if (MANUAL_TYPES.includes(q.type)) {
       const pts = manualScores ? manualScores[q.id] : undefined;
-      return { enonce: q.enonce, detail: `Réponse : ${formatGivenText(q, given)} — Points : ${pts !== undefined && pts !== null ? pts : '—'}/${q.points}`, isCorrect: null, media };
+      return { enonce: q.enonce, detail: `Réponse : ${formatGivenText(q, given)}${q.corrige ? ' — Attendu : ' + q.corrige : ''} — Points : ${pts !== undefined && pts !== null ? pts : '—'}/${q.points}`, isCorrect: null, media };
     }
     const auto = autoDetail ? autoDetail[q.id] : null;
     return {

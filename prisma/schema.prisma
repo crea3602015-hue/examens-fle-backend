@@ -218,3 +218,79 @@ model Settings {
   id           String  @id @default("singleton")
   schoolLogoId String?
 }
+
+// ============ SUIVI DES ÉVALUATIONS (réservé à l'administrateur) ============
+// Structure maîtresse de l'établissement, saisie une seule fois : Section > Classe > Groupe,
+// plus les listes de matières et de niveaux. Elle sert ensuite aux trois suivis (Guide, Examen, Projet).
+model SuiviYear {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  createdAt DateTime @default(now())
+}
+
+model SuiviNode {
+  id        String   @id @default(cuid())
+  parentId  String?
+  kind      String   // section | classe | groupe
+  nom       String
+  niveau    String?  // niveau (liste maîtresse) associé à un groupe, facultatif
+  ordre     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([parentId])
+}
+
+model SuiviMatiere {
+  id    String @id @default(cuid())
+  nom   String
+  ordre Int    @default(0)
+}
+
+model SuiviNiveau {
+  id    String @id @default(cuid())
+  nom   String
+  ordre Int    @default(0)
+}
+
+// Statut courant d'un document : (année, trimestre, type, groupe ou classe, matière) -> 0..6
+model SuiviStatus {
+  id         String   @id @default(cuid())
+  annee      String
+  trimestre  Int
+  type       String   // guide | examen | projet
+  leafId     String   // id du groupe (ou de la classe s'il n'y a pas de groupe)
+  matiereId  String
+  statut     Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([annee, trimestre, type, leafId, matiereId])
+  @@index([annee, trimestre])
+}
+
+// Historique : chaque changement de statut est enregistré automatiquement.
+model SuiviHistory {
+  id         String   @id @default(cuid())
+  annee      String
+  trimestre  Int
+  type       String
+  leafId     String
+  matiereId  String
+  statut     Int
+  at         DateTime @default(now())
+  par        String?
+
+  @@index([annee, trimestre, type, leafId, matiereId])
+}
+
+// ============ DOCUMENTS PÉDAGOGIQUES (apprentissages attendus, guides de révision) ============
+model PedaDocument {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // apprentissages | guide
+  titre     String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, type])
+}

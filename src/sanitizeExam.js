@@ -34,6 +34,9 @@ function sanitizeQuestion(q) {
       };
     case 'classement':
       return { ...base, items: (q.items || []) }; // le frontend mélange lui-même à l'affichage
+    case 'classification':
+      // catégories + éléments, mais jamais la catégorie correcte de chaque élément
+      return { ...base, categories: q.categories || [], elements: (q.elements || []).map(e => ({ texte: e.texte })) };
     case 'texte_long':
     case 'correction_manuelle':
     case 'production_orale':
@@ -49,7 +52,8 @@ function sanitizeExam(exam) {
     id: exam.id, titre: exam.titre, niveau: exam.niveau, navMode: exam.navMode,
     duree: exam.duree, autoriserReprise: exam.autoriserReprise,
     sections: (exam.sections || []).map(sec => ({
-      id: sec.id, titre: sec.titre, questions: (sec.questions || []).map(sanitizeQuestion),
+      id: sec.id, titre: sec.titre, audio: sec.audio || '', consigne: sec.consigne || '',
+      questions: (sec.questions || []).map(sanitizeQuestion),
     })),
   };
 }

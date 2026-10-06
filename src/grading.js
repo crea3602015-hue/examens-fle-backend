@@ -3,15 +3,47 @@
 // puisse falsifier une note en modifiant les données envoyées à l'API.
 
 function sectionPoints(sec) {
-  return (sec.questions || []).reduce((a, q) => a + Number(q.points || 0), 0);
+  return Math.round((sec.questions || []).reduce((a, q) => a + Number(q.points || 0), 0) * 100) / 100;
 }
 
 function examTotalPoints(exam) {
-  return (exam.sections || []).reduce((s, sec) => s + sectionPoints(sec), 0);
+  return Math.round((exam.sections || []).reduce((s, sec) => s + sectionPoints(sec), 0) * 100) / 100;
 }
 
 const MANUAL_TYPES = ['texte_long', 'correction_manuelle', 'dessin'];
 const ORAL_TYPE = 'production_orale';
+
+/** Normalise un texte pour comparer des réponses : minuscules, sans accents ni ponctuation. */
+function norm(s) {
+  return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’'`´]/g, ' ').replace(/[^a-z0-9\u0153 ]/g, ' ').replace(/\s+/g, ' ').trim().replace(/(\d) h\b/g, '$1h');
+}
+/** Une réponse attendue peut proposer des variantes séparées par « | » (ex. « 8 heures|8h|8h00 »). */
+function matchesAny(given, spec) {
+  const alts = String(spec == null ? '' : spec).split('|').map(norm).filter(a => a !== '');
+  return alts.includes(norm(given));
+}
+
+/** Arrondi à 2 décimales (les notes peuvent être décimales : 3,5 / 5). */
+function round2(n) { return Math.round(Number(n) * 100) / 100; }
+/** Borne une note entre 0 et le maximum de la question. */
+function clamp(v, max) { return Math.max(0, Math.min(Number(max), Number(v))); }
+
+/** Note d'une production orale évaluée par une grille de critères.
+    breakdown : { [critereId]: pointsDonnés }. Si la somme des critères diffère des
+    points de la question (ex. grille sur 30 pour une partie sur 25), la note est
+    ramenée proportionnellement aux points de la question. */
+function oralFromCriteria(q, breakdown) {
+  const criteres = q.criteres || [];
+  const maxSum = criteres.reduce((a, c) => a + Number(c.points || 0), 0);
+  if (!maxSum) return 0;
+  let got = 0;
+  criteres.forEach(c => {
+    const v = Number((breakdown || {})[c.id]);
+    if (Number.isFinite(v)) got += clamp(v, c.points);
+  });
+  return round2((got * Number(q.points || 0)) / maxSum);
+}
 
 /** Auto-grade a single question given the student's answer. Returns {correct, points}. */
 function gradeAuto(q, given) {
@@ -35,16 +67,16 @@ function gradeAuto(q, given) {
       return { correct: ok, points: ok ? pts : 0 };
     }
     case 'texte_court': {
-      const ok = String(given).trim().toLowerCase() === String(q.correct || '').trim().toLowerCase();
+      const ok = matchesAny(given, q.correct);
       return { correct: ok, points: ok ? pts : 0 };
     }
     case 'texte_trous': {
-      const expected = (q.correct || '').split(',').map(s => s.trim().toLowerCase());
-      const givenArr = (given || []).map(s => String(s).trim().toLowerCase());
+      const expected = (q.correct || '').split(',').map(s => s.trim());
+      const givenArr = (given || []).map(s => String(s));
       let good = 0;
-      expected.forEach((e, i) => { if (givenArr[i] === e) good++; });
+      expected.forEach((e, i) => { if (matchesAny(givenArr[i], e)) good++; });
       const ratio = expected.length ? good / expected.length : 0;
-      return { correct: ratio === 1, points: Math.round(ratio * pts) };
+      return { correct: ratio === 1, points: round2(ratio * pts) };
     }
     case 'association': {
       const pairs = q.pairs || [];
@@ -52,7 +84,7 @@ function gradeAuto(q, given) {
       let good = 0;
       pairs.forEach(p => { if ((given || {})[p.left] === p.right) good++; });
       const ratio = good / pairs.length;
-      return { correct: ratio === 1, points: Math.round(ratio * pts) };
+      return { correct: ratio === 1, points: round2(ratio * pts) };
     }
     case 'association_images': {
       const pairs = q.pairs || [];
@@ -61,7 +93,16 @@ function gradeAuto(q, given) {
       const g = given || {};
       pairs.forEach(p => { if (g[p.id] === p.id) good++; });
       const ratio = good / pairs.length;
-      return { correct: ratio === 1, points: Math.round(ratio * pts) };
+      return { correct: ratio === 1, points: round2(ratio * pts) };
+    }
+    case 'classification': {
+      const els = q.elements || [];
+      if (els.length === 0) return { correct: false, points: 0 };
+      const g = given || {};
+      let good = 0;
+      els.forEach((e, i) => { if (norm(g[i]) === norm(e.categorie)) good++; });
+      const ratio = good / els.length;
+      return { correct: ratio === 1, points: round2(ratio * pts) };
     }
     case 'classement': {
       const expected = q.items || [];
@@ -92,7 +133,13 @@ function computeResult(exam, reponses, manualOverrides = {}, oralOverride = null
     let secScore = 0;
     sec.questions.forEach(q => {
       if (q.type === ORAL_TYPE) {
-        const v = oralOverride !== null && oralOverride !== undefined ? Number(oralOverride) : 0;
+        let v;
+        const breakdown = manualOverrides['crit:' + q.id];
+        if ((q.criteres || []).length && breakdown && typeof breakdown === 'object') {
+          v = oralFromCriteria(q, breakdown); // la note est calculée par le serveur à partir de la grille
+        } else {
+          v = oralOverride !== null && oralOverride !== undefined ? clamp(oralOverride, q.points) : 0;
+        }
         oralNote = v;
         secScore += v;
         return;
@@ -102,7 +149,7 @@ function computeResult(exam, reponses, manualOverrides = {}, oralOverride = null
         if (v === undefined || v === null || v === '') {
           manualPending = true;
         } else {
-          secScore += Number(v);
+          secScore += clamp(v, q.points);
         }
         return;
       }
@@ -110,14 +157,15 @@ function computeResult(exam, reponses, manualOverrides = {}, oralOverride = null
       autoDetail[q.id] = g;
       secScore += g.points;
     });
-    sectionScores[sec.id] = secScore;
+    sectionScores[sec.id] = round2(secScore);
     total += secScore;
   });
 
   const max = examTotalPoints(exam);
+  total = round2(total);
   const pct = max ? Math.round((100 * total) / max) : 0;
 
   return { sectionScores, autoDetail, total, max, pct, manualPending, oralNote };
 }
 
-module.exports = { sectionPoints, examTotalPoints, gradeAuto, computeResult, MANUAL_TYPES, ORAL_TYPE };
+module.exports = { sectionPoints, examTotalPoints, gradeAuto, computeResult, oralFromCriteria, MANUAL_TYPES, ORAL_TYPE };

@@ -119,20 +119,53 @@ router.post('/:id/duplicate', async (req, res) => {
   res.status(201).json(shape(copy));
 });
 
-// DELETE /api/exams/:id — refusé si des sessions existent déjà (pour ne jamais perdre
-// silencieusement des résultats déjà passés) ; proposer l'archivage dans ce cas.
+// GET /api/exams/:id/usage — ce qui serait supprimé en même temps que l'examen
+router.get('/:id/usage', async (req, res) => {
+  const exam = await prisma.exam.findUnique({ where: { id: req.params.id } });
+  if (!exam) return res.status(404).json({ error: 'Examen introuvable.' });
+  const sessions = await prisma.examSession.count({ where: { examId: exam.id } });
+  const attempts = await prisma.attempt.count({ where: { session: { examId: exam.id } } });
+  res.json({ sessions, attempts });
+});
+
+/** Identifiants des images téléversées utilisées dans les questions d'un examen. */
+function uploadIds(sections) {
+  const ids = new Set();
+  JSON.stringify(sections || []).replace(/\/api\/uploads\/([A-Za-z0-9_-]+)/g, (m, id) => { ids.add(id); return m; });
+  return [...ids];
+}
+
+// DELETE /api/exams/:id
+//   sans option        : refusé s'il existe des sessions (protection contre une suppression par erreur)
+//   ?definitif=1       : suppression DÉFINITIVE de l'examen, de ses assignations, de ses sessions, des copies
+//                        des élèves et de leurs résultats, et des images qui ne servent plus à aucun autre examen.
 router.delete('/:id', async (req, res) => {
   const existing = await prisma.exam.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Examen introuvable.' });
+  const definitif = req.query.definitif === '1';
   const sessionCount = await prisma.examSession.count({ where: { examId: existing.id } });
-  if (sessionCount > 0) {
+  if (sessionCount > 0 && !definitif) {
     return res.status(409).json({
-      error: `Impossible de supprimer : ${sessionCount} session(s) et leurs résultats existent pour cet examen. Archivez-le plutôt.`,
+      error: `${sessionCount} session(s) et leurs résultats existent pour cet examen. Utilisez « Supprimer définitivement » pour tout effacer.`,
     });
   }
-  await prisma.exam.delete({ where: { id: existing.id } });
-  await logAction('Examen supprimé', existing.titre);
-  res.json({ ok: true });
+  const attemptCount = await prisma.attempt.count({ where: { session: { examId: existing.id } } });
+  const mine = uploadIds(existing.sections);
+
+  await prisma.exam.delete({ where: { id: existing.id } }); // les sessions, copies et résultats suivent (suppression en cascade)
+
+  // Libère l'espace : on supprime les images de cet examen que plus personne n'utilise.
+  let freed = 0;
+  if (mine.length) {
+    const [others, projects, settings] = await Promise.all([
+      prisma.exam.findMany({ select: { sections: true } }), prisma.project.findMany(), prisma.settings.findUnique({ where: { id: 'singleton' } }),
+    ]);
+    const haystack = JSON.stringify(others.map(o => o.sections)) + JSON.stringify(projects);
+    const orphans = mine.filter(id => !haystack.includes(id) && !(settings && settings.schoolLogoId === id));
+    if (orphans.length) { freed = (await prisma.uploadedFile.deleteMany({ where: { id: { in: orphans } } })).count; }
+  }
+  await logAction(definitif ? 'Examen supprimé définitivement' : 'Examen supprimé', `${existing.titre} (${sessionCount} session(s), ${attemptCount} copie(s), ${freed} image(s))`);
+  res.json({ ok: true, sessions: sessionCount, copies: attemptCount, images: freed });
 });
 
 module.exports = router;

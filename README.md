@@ -221,3 +221,32 @@ obtenu via `POST /api/auth/login`.
 Build Command `npx prisma db push --accept-data-loss` (voir étape 5 plus haut)
 applique automatiquement ces changements à chaque déploiement — aucune action
 manuelle nécessaire de votre part au-delà d'un redéploiement normal.
+
+- Production orale avec **grille de critères** : la note est calculée par le serveur à partir des notes par critère
+  (`crit:<id question>` dans `manualScores`) ; si la grille ne totalise pas les points de la question, la note est ramenée
+  proportionnellement. Les notes saisies à la main sont bornées entre 0 et le maximum de la question.
+- Correction des réponses courtes insensible aux accents, à la casse et à la ponctuation, avec **variantes acceptées**
+  séparées par « | » (ex. `8 heures|8h|8h00`) — questions « texte court » et « texte à trous ».
+- Nouveau type de question **« Classement par catégories »** (`classification`) : plusieurs éléments vers une même catégorie,
+  note proportionnelle.
+- Champ `corrige` (réponse attendue, visible seulement par le professeur) sur les questions corrigées à la main.
+- Correctif : l'audio et la consigne de chaque partie sont maintenant bien transmis aux élèves (`sanitizeExam`).
+- Notes proportionnelles en décimales (2,5 points ne sont plus arrondis à 3) ; totaux arrondis à 2 décimales.
+- Aucun changement de base de données dans cette version.
+
+- Module **Suivi des évaluations** (administrateur uniquement) : structure maîtresse Section > Classe > Groupe,
+  matières, niveaux et années scolaires saisis librement, puis suivi des Guides, Examens et Projets par trimestre
+  avec 7 statuts indépendants et historique (`/api/suivi/*`, modèles `Suivi*` — changement de base de données
+  automatique au déploiement).
+
+- Module **Documents pédagogiques** (administrateur uniquement) : apprentissages attendus et guides de révision, rédaction
+  assistée par IA (Groq, `GROQ_API_KEY` ; repli automatique sans IA), aperçu fidèle, export Word et PDF en version parents
+  (une feuille Letter) et version élèves (deux fiches identiques 8,5 x 5,5 po par feuille), sauvegarde, duplication et
+  suppression sur demande (`/api/peda/*`, modèle `PedaDocument`). Nouvelles dépendances : `docx`, `pdf-lib`.
+- Documents pédagogiques : présentation en **tableau** (par défaut) ou en liste, au choix ; tableau à 2 colonnes pour les apprentissages attendus et à 4 colonnes pour le guide de révision (en-tête répété sur chaque page).
+
+- **Suppression définitive d'un examen** (`DELETE /api/exams/:id?definitif=1`) : efface l'examen, ses assignations, ses sessions,
+  les copies des élèves, les résultats et les images devenues inutiles ; `GET /api/exams/:id/usage` donne ce qui sera effacé.
+- **Conversion d'un examen Word ou PDF par IA** (`POST /api/convert/exam`) : le navigateur lit le document (Word : texte, gras,
+  tableaux, images ; PDF : texte), l'IA (Groq) structure l'examen (parties, types de questions, points, réponses) et le serveur
+  vérifie chaque question ; ce qui n'est pas certain est marqué « réponse à confirmer ». L'examen est créé en brouillon non vérifié.
