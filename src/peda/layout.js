@@ -11,10 +11,11 @@ async function makeMeasurer() {
   const cache = new Map();
   /** Remplace les caractères que la police standard ne sait pas afficher. */
   function safe(s) {
-    return String(s).replace(/[\u202f\u2009\u200a]/g, ' ').replace(/[\u2011]/g, '-').replace(/[\u2192\u2794]/g, '-').split('').map(ch => {
+    return require('./text').noDash(s).replace(/[\u202f\u2009\u200a]/g, ' ').replace(/[\u2011]/g, '-').replace(/[\u2192\u2794]/g, '-').split('').map(ch => {
       if (cache.has(ch)) return cache.get(ch);
       let out = ch;
-      try { fonts.regular.encodeText(ch); } catch (e) { out = ch === '\n' ? '\n' : '?'; }
+      if (/[\uE000-\uF8FF\u200b-\u200f\u2028\u2029\u00ad\ufeff\ufe0f\ud800-\udfff]/.test(ch)) out = '';
+      else { try { fonts.regular.encodeText(ch); } catch (e) { out = ch === '\n' ? '\n' : '?'; } }
       cache.set(ch, out); return out;
     }).join('');
   }

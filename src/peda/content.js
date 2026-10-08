@@ -11,7 +11,8 @@ const HEADINGS = {
   'Définition / Concept': 'DÉFINITIONS ET CONCEPTS', 'Exercices': 'EXERCICES', 'Vidéo': 'VIDÉOS', 'Document': 'DOCUMENTS', 'Autre': 'AUTRES CONTENUS',
 };
 
-const t = v => String(v == null ? '' : v).trim();
+const { noDash } = require('./text');
+const t = v => noDash(v).trim();
 
 function pagesText(debut, fin) {
   const d = t(debut), f = t(fin);
@@ -23,7 +24,7 @@ function pagesText(debut, fin) {
 /** Lignes "Pour réviser" d'une ressource : uniquement les informations fournies. */
 function resourceLines(r) {
   const out = []; // {text, link?, note?}
-  const join = parts => parts.map(t).filter(Boolean).join(' — ');
+  const join = parts => parts.map(t).filter(Boolean).join(', ');
   const url = t(r.url), com = t(r.commentaire);
   switch (r.type) {
     case 'livre': { const s = join([r.titre, r.chapitre, pagesText(r.debut, r.fin)]); out.push({ text: s ? `Livre : ${s}` : 'Livre' }); break; }
@@ -40,8 +41,8 @@ function resourceLines(r) {
 
 function headerLine(info, type) {
   const niveau = [t(info.classe), t(info.section) && !t(info.classe) ? t(info.section) : ''].filter(Boolean).join(' ');
-  const l2 = [t(info.matiere), niveau].filter(Boolean).join(' — ');
-  return { l2: l2 + (t(info.niveauLinguistique) ? ` — Niveau ${t(info.niveauLinguistique)}` : ''), l3: [t(info.periode), t(info.annee)].filter(Boolean).join(' — ') };
+  const l2 = [t(info.matiere), niveau].filter(Boolean).join(', ');
+  return { l2: l2 + (t(info.niveauLinguistique) ? `, niveau ${t(info.niveauLinguistique)}` : ''), l3: [t(info.periode), t(info.annee)].filter(Boolean).join(', ') };
 }
 
 
@@ -64,17 +65,28 @@ function buildTable(doc, P) {
     });
     return { cols: [0.34, 0.66], titles: ['Contenu', 'Apprentissage attendu'], rows };
   }
+  const GENERIC = new Set(['', 'Sujet / Thème', 'Autre', 'Notion', 'Sujets']);
+  const lines = x => (x.ressources || []).flatMap(resourceLines);
+  const kept = items.filter(x => t(x.nom) || t(x.savoir) || t(x.savoirFaire) || lines(x).length);
+  // Une colonne entièrement vide disparaît : la feuille reste pleine, sans trou.
+  const hasSav = kept.some(x => t(x.savoir)), hasSf = kept.some(x => t(x.savoirFaire)), hasRes = kept.some(x => lines(x).length);
+  const colDefs = [{ title: 'Sujet ou notion', w: 2, on: true }, { title: 'Ce que je dois savoir', w: 3, on: hasSav }, { title: 'Ce que je dois savoir faire', w: 3, on: hasSf }, { title: 'Pour réviser', w: 2.4, on: hasRes }].filter(c => c.on);
+  const sum = colDefs.reduce((a, c) => a + c.w, 0);
   const rows = [];
-  items.forEach(x => {
-    const lines = (x.ressources || []).flatMap(resourceLines);
-    if (!t(x.nom) && !t(x.savoir) && !t(x.savoirFaire) && !lines.length) return;
-    rows.push({ type: 'row', cells: [
-      [ ...(t(x.categorie) ? [it((HEADINGS[t(x.categorie)] || t(x.categorie)).toUpperCase(), { size: P.label - 1, color: P.gray, bold: true })] : []), it(t(x.nom), { bold: true }) ],
-      [it(t(x.savoir))], [it(t(x.savoirFaire))],
-      lines.map(l => l.link ? it(l.text, { link: l.link, color: P.link }) : it(l.text, { italic: !!l.note, color: l.note ? P.gray : P.ink, size: l.note ? P.body - 0.5 : P.body })),
-    ] });
+  let lastCat = null;
+  kept.forEach(x => {
+    const cat = t(x.categorie);
+    if (cat !== lastCat) {
+      lastCat = cat;
+      if (!GENERIC.has(cat)) rows.push({ type: 'cat', cells: [[it(HEADINGS[cat] || cat.toUpperCase(), { bold: true, color: P.navy, size: P.label + 1 })]] });
+    }
+    const cells = [[it(t(x.nom), { bold: true, color: P.navy })]];
+    if (hasSav) cells.push([it(t(x.savoir))]);
+    if (hasSf) cells.push([it(t(x.savoirFaire))]);
+    if (hasRes) cells.push(lines(x).map(l => l.link ? it(l.text, { link: l.link, color: P.link }) : it(l.text, { italic: !!l.note, color: l.note ? P.gray : P.ink, size: l.note ? P.body - 0.5 : P.body })));
+    rows.push({ type: 'row', cells });
   });
-  return { cols: [0.2, 0.27, 0.27, 0.26], titles: ['Sujet ou notion', 'Ce que je dois savoir', 'Ce que je dois savoir faire', 'Pour réviser'], rows };
+  return { cols: colDefs.map(c => c.w / sum), titles: colDefs.map(c => c.title), rows };
 }
 
 /** profile : tailles de base (en points) selon la version. */
@@ -111,7 +123,7 @@ function buildBlocks(doc, P) {
   } else {
     items.forEach(it => {
       const cat = HEADINGS[t(it.categorie)] ? t(it.categorie) : t(it.categorie);
-      const head = [ (t(it.categorie) || '').split(' / ')[0].toUpperCase(), t(it.nom).toUpperCase() ].filter(Boolean).join(' — ');
+      const head = [ (t(it.categorie) || '').split(' / ')[0].toUpperCase(), t(it.nom).toUpperCase() ].filter(Boolean).join(', ');
       if (!head && !t(it.savoir) && !t(it.savoirFaire) && !(it.ressources || []).length) return;
       B.push({ kind: 'cat', text: head, size: P.cat, bold: true, color: P.navy, before: 8, after: 2, keep: true });
       if (t(it.savoir)) { B.push({ kind: 'label', text: 'Ce que je dois savoir', size: P.label, bold: true, color: P.gray, before: 2, after: 0, keep: true }); B.push({ kind: 'para', text: t(it.savoir), size: P.body, color: P.ink, after: 2 }); }

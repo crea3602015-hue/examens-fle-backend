@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { logAction } = require('../audit');
+const { teacherReply, adminReassign } = require('../review');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -16,8 +17,18 @@ router.get('/', async (req, res) => {
   res.json(list.map(a => ({
     id: a.id, projectId: a.projectId, projectTitre: a.project?.titre, projectNiveau: a.project?.niveau,
     teacherId: a.teacherId, teacherName: a.teacher?.name || '(compte supprimé)',
-    classe: a.classe, groupe: a.groupe, entryCount: a._count.entries,
+    classe: a.classe, groupe: a.groupe, entryCount: a._count.entries, reviewStatus: a.reviewStatus, reviewNotes: a.reviewNotes,
   })));
+});
+
+// POST /api/project-assignments/:id/revue { action, note } — le professeur concerné
+router.post('/:id/revue', async (req, res) => {
+  const a = await prisma.projectAssignment.findUnique({ where: { id: req.params.id } });
+  if (!a || a.teacherId !== req.user.sub) return res.status(404).json({ error: 'Assignation introuvable.' });
+  const r = teacherReply(a.reviewNotes, req.body.action, req.body.note);
+  if (r.error) return res.status(400).json({ error: r.error });
+  await prisma.projectAssignment.update({ where: { id: a.id }, data: r });
+  res.json(r);
 });
 
 router.use(requireRole('ADMIN'));
@@ -36,6 +47,15 @@ router.post('/', async (req, res) => {
   const assignment = await prisma.projectAssignment.create({ data: { projectId, teacherId, classe, groupe } });
   await logAction('Projet assigné', `${project.titre} → ${teacher.name}`);
   res.status(201).json({ id: assignment.id });
+});
+
+// POST /api/project-assignments/:id/reassigner { note }
+router.post('/:id/reassigner', async (req, res) => {
+  const a = await prisma.projectAssignment.findUnique({ where: { id: req.params.id } });
+  if (!a) return res.status(404).json({ error: 'Assignation introuvable.' });
+  const r = adminReassign(a.reviewStatus, a.reviewNotes, req.body.note);
+  await prisma.projectAssignment.update({ where: { id: a.id }, data: r });
+  res.json(r);
 });
 
 // DELETE /api/project-assignments/:id

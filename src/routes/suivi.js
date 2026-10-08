@@ -76,6 +76,12 @@ router.put('/nodes/:id', async (req, res) => {
     data.nom = nom;
   }
   if (req.body.niveau !== undefined) data.niveau = clean(req.body.niveau) || null;
+  if (req.body.matieres !== undefined) {
+    if (node.kind !== 'section') return res.status(400).json({ error: 'Les matières se choisissent au niveau de la section.' });
+    const ids = (Array.isArray(req.body.matieres) ? req.body.matieres : []).map(String);
+    const ok = await prisma.suiviMatiere.findMany({ where: { id: { in: ids } }, select: { id: true } });
+    data.matieres = ok.map(m => m.id);
+  }
   res.json(await prisma.suiviNode.update({ where: { id: node.id }, data }));
 });
 
@@ -169,7 +175,7 @@ router.get('/statuts', async (req, res) => {
 router.put('/statut', async (req, res) => {
   const annee = clean(req.body.annee), trimestre = Number(req.body.trimestre), type = clean(req.body.type);
   const leafId = clean(req.body.leafId), matiereId = clean(req.body.matiereId), statut = Number(req.body.statut);
-  if (!annee || ![1, 2, 3].includes(trimestre) || !TYPES.includes(type) || !leafId || !matiereId || !Number.isInteger(statut) || statut < 0 || statut > 6) {
+  if (!annee || ![1, 2, 3].includes(trimestre) || !TYPES.includes(type) || !leafId || !matiereId || !Number.isInteger(statut) || statut < 0 || statut > 7) {
     return res.status(400).json({ error: 'Données de statut invalides.' });
   }
   const [leaf, matiere] = await Promise.all([
@@ -196,6 +202,26 @@ router.get('/historique', async (req, res) => {
   res.json(await prisma.suiviHistory.findMany({ where, orderBy: { at: 'asc' } }));
 });
 
+// POST /api/suivi/matieres-habituelles — Préscolaire : français + mathématiques ; Primaire : français + sciences ; Secondaire : français seulement.
+router.post('/matieres-habituelles', async (req, res) => {
+  const fold = x => clean(x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const rules = { prescolaire: ['Français', 'Mathématiques'], primaire: ['Français', 'Sciences'], secondaire: ['Français'] };
+  const sections = await prisma.suiviNode.findMany({ where: { kind: 'section' } });
+  const concerned = sections.filter(sec => rules[fold(sec.nom)]);
+  if (!concerned.length) return res.status(404).json({ error: 'Aucune section nommée Préscolaire, Primaire ou Secondaire.' });
+  const byName = async nom => {
+    const all = await prisma.suiviMatiere.findMany();
+    const found = all.find(m => fold(m.nom) === fold(nom));
+    return found || prisma.suiviMatiere.create({ data: { nom, ordre: await nextOrdre('suiviMatiere') } });
+  };
+  for (const sec of concerned) {
+    const ids = [];
+    for (const nom of rules[fold(sec.nom)]) ids.push((await byName(nom)).id);
+    await prisma.suiviNode.update({ where: { id: sec.id }, data: { matieres: ids } });
+  }
+  res.json({ ok: true, sections: concerned.length });
+});
+
 // POST /api/suivi/modele — structure type facultative (n'est jamais imposée : l'administrateur la modifie librement)
 router.post('/modele', async (req, res) => {
   if (await prisma.suiviNode.count()) return res.status(409).json({ error: 'La structure contient déjà des éléments.' });
@@ -204,7 +230,10 @@ router.post('/modele', async (req, res) => {
   for (const [i, n] of ['Petite section', 'Moyenne section', 'Grande section'].entries()) await add(pre.id, 'classe', n, i);
   for (const [i, n] of ['1re année', '2e année', '3e année', '4e année', '5e année', '6e année'].entries()) await add(pri.id, 'classe', n, i);
   for (const [i, n] of ['1re secondaire', '2e secondaire', '3e secondaire'].entries()) await add(sec.id, 'classe', n, i);
-  if (!(await prisma.suiviMatiere.count())) { await prisma.suiviMatiere.create({ data: { nom: 'Français', ordre: 0 } }); await prisma.suiviMatiere.create({ data: { nom: 'Sciences', ordre: 1 } }); }
+  if (!(await prisma.suiviMatiere.count())) { for (const [i, n] of ['Français', 'Sciences', 'Mathématiques'].entries()) await prisma.suiviMatiere.create({ data: { nom: n, ordre: i } }); }
+  const mats = await prisma.suiviMatiere.findMany(), idOf = n => (mats.find(m => m.nom === n) || {}).id;
+  const setM = (sec, names) => prisma.suiviNode.update({ where: { id: sec.id }, data: { matieres: names.map(idOf).filter(Boolean) } });
+  await setM(pre, ['Français', 'Mathématiques']); await setM(pri, ['Français', 'Sciences']); await setM(sec, ['Français']);
   if (!(await prisma.suiviNiveau.count())) for (const [i, n] of ['A1', 'A2', 'B1', 'B1+', 'B2', 'B2+'].entries()) await prisma.suiviNiveau.create({ data: { nom: n, ordre: i } });
   res.json({ ok: true });
 });

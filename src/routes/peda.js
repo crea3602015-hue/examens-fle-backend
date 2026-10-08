@@ -2,16 +2,19 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { getSchoolLogo } = require('../logo');
-const { generate } = require('../peda/ai');
+const { generate, fromDocument } = require('../peda/ai');
+const { noDash } = require('../peda/text');
+const { teacherReply, adminReassign } = require('../review');
 const { layoutDocument } = require('../peda/layout');
 const { renderPdf } = require('../peda/renderPdf');
 const { renderDocx } = require('../peda/renderDocx');
 
 const router = express.Router();
-router.use(requireAuth, requireRole('ADMIN')); // réservé à l'administrateur
+router.use(requireAuth);
 
 const TYPES = ['apprentissages', 'guide'];
-const t = v => String(v == null ? '' : v).trim();
+const slug = s => String(s == null ? '' : s).trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+const t = v => noDash(v).trim();
 
 /** Vérifie et nettoie les données d'un document reçu du navigateur. */
 function cleanDoc(type, data) {
@@ -37,15 +40,56 @@ function cleanDoc(type, data) {
 }
 
 function defaultTitle(type, info) {
-  return [type === 'guide' ? 'Guide de révision' : 'Apprentissages attendus', info.matiere, info.classe, info.periode, info.annee].map(t).filter(Boolean).join(' — ');
+  return [type === 'guide' ? 'Guide de révision' : 'Apprentissages attendus', info.matiere, info.classe, info.periode, info.annee].map(t).filter(Boolean).join(', ');
 }
-const shape = d => ({ id: d.id, type: d.type, titre: d.titre, data: d.data, createdAt: d.createdAt, updatedAt: d.updatedAt });
+const shape = (d, teacherName) => ({
+  id: d.id, type: d.type, titre: d.titre, data: d.data, createdAt: d.createdAt, updatedAt: d.updatedAt,
+  teacherId: d.teacherId || null, teacherName: teacherName || null, assignedAt: d.assignedAt || null,
+  reviewStatus: d.reviewStatus || '', reviewNotes: Array.isArray(d.reviewNotes) ? d.reviewNotes : [],
+});
+
+/* ---------- Espace professeur : documents qui lui sont assignés (version parents seulement) ---------- */
+async function assignedToMe(req, res) {
+  const doc = await prisma.pedaDocument.findUnique({ where: { id: req.params.id } });
+  if (!doc || doc.teacherId !== req.user.sub) { res.status(404).json({ error: 'Document introuvable.' }); return null; }
+  return doc;
+}
+router.get('/assignes', async (req, res) => {
+  const docs = await prisma.pedaDocument.findMany({ where: { teacherId: req.user.sub }, orderBy: { assignedAt: 'desc' } });
+  res.json(docs.map(d => shape(d)));
+});
+router.get('/assignes/:id/apercu', async (req, res) => {
+  const d = await assignedToMe(req, res); if (!d) return;
+  const logo = await getSchoolLogo();
+  res.json({ layout: await layoutDocument({ type: d.type, data: d.data }, 'parents'), logoId: logo ? logo.id : null });
+});
+router.get('/assignes/:id/pdf', async (req, res) => {
+  const d = await assignedToMe(req, res); if (!d) return;
+  const logo = await getSchoolLogo(), info = d.data.info || {};
+  const buf = await renderPdf(await layoutDocument({ type: d.type, data: d.data }, 'parents'), logo);
+  const name = ['Camus', d.type === 'guide' ? 'guide_revision' : 'apprentissages', slug(info.matiere), slug(info.classe), slug(info.periode), 'parents'].filter(Boolean).join('_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}.pdf"`);
+  res.send(buf);
+});
+router.post('/assignes/:id/revue', async (req, res) => {
+  const d = await assignedToMe(req, res); if (!d) return;
+  const r = teacherReply(d.reviewNotes, req.body.action, req.body.note);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json(shape(await prisma.pedaDocument.update({ where: { id: d.id }, data: r })));
+});
+
+router.use(requireRole('ADMIN')); // tout ce qui suit est réservé à l'administrateur
+
 
 /* ---------- Mes documents ---------- */
 router.get('/documents', async (req, res) => {
   const where = { userId: req.user.sub, ...(TYPES.includes(req.query.type) ? { type: req.query.type } : {}) };
   const docs = await prisma.pedaDocument.findMany({ where, orderBy: { updatedAt: 'desc' } });
-  res.json(docs.map(shape));
+  const ids = [...new Set(docs.map(d => d.teacherId).filter(Boolean))];
+  const users = ids.length ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+  const names = new Map(users.map(u => [u.id, u.name]));
+  res.json(docs.map(d => shape(d, names.get(d.teacherId))));
 });
 
 router.post('/documents', async (req, res) => {
@@ -70,6 +114,22 @@ router.put('/documents/:id', async (req, res) => {
     const data = cleanDoc(d.type, req.body.data);
     res.json(shape(await prisma.pedaDocument.update({ where: { id: d.id }, data: { titre: t(req.body.titre) || defaultTitle(d.type, data.info), data } })));
   } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Assigner (ou réassigner après corrections) à un professeur : il ne voit que la version parents.
+router.post('/documents/:id/assigner', async (req, res) => {
+  const d = await mine(req, res); if (!d) return;
+  const teacherId = t(req.body.teacherId) || d.teacherId;
+  const teacher = teacherId ? await prisma.user.findUnique({ where: { id: teacherId } }) : null;
+  if (!teacher || teacher.role !== 'TEACHER') return res.status(404).json({ error: 'Professeur introuvable.' });
+  const change = teacherId !== d.teacherId;
+  const r = change ? { reviewStatus: 'assigné', reviewNotes: t(req.body.note) ? [{ de: 'admin', texte: t(req.body.note), at: new Date().toISOString() }] : [] } : adminReassign(d.reviewStatus, d.reviewNotes, req.body.note);
+  const upd = await prisma.pedaDocument.update({ where: { id: d.id }, data: { teacherId, assignedAt: new Date(), ...r } });
+  res.json(shape(upd, teacher.name));
+});
+router.post('/documents/:id/retirer-assignation', async (req, res) => {
+  const d = await mine(req, res); if (!d) return;
+  res.json(shape(await prisma.pedaDocument.update({ where: { id: d.id }, data: { teacherId: null, assignedAt: null, reviewStatus: '', reviewNotes: [] } })));
 });
 
 // Duplication : une copie totalement indépendante (la modifier ne change jamais l'original).
@@ -98,6 +158,17 @@ router.post('/generer', async (req, res) => {
   res.json(await generate(type, req.body.info || {}, items));
 });
 
+// POST /api/peda/depuis-document { type, info, text, categories } : l'IA prépare les contenus à partir d'un document Word ou PDF.
+router.post('/depuis-document', async (req, res) => {
+  const type = t(req.body.type);
+  if (!TYPES.includes(type)) return res.status(400).json({ error: 'Type de document inconnu.' });
+  const text = String(req.body.text || '').slice(0, 60000);
+  if (text.trim().length < 10) return res.status(400).json({ error: 'Le document ne contient pas de texte lisible.' });
+  const cats = (Array.isArray(req.body.categories) ? req.body.categories : []).map(t).filter(Boolean).slice(0, 40);
+  const r = await fromDocument(type, req.body.info || {}, text, cats);
+  res.json({ ...r, items: r.items.map(it => ({ id: Math.random().toString(36).slice(2, 10), ...it })) });
+});
+
 /* ---------- Aperçu et téléchargements ---------- */
 async function prepare(req) {
   const type = t(req.body.type), data = cleanDoc(type, req.body.data);
@@ -114,7 +185,6 @@ router.post('/apercu', async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-const slug = s => t(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
 router.post('/exporter', async (req, res) => {
   try {
     const { type, data, version, layout } = await prepare(req);

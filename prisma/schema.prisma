@@ -83,6 +83,9 @@ model Assignment {
   exam    Exam  @relation(fields: [examId], references: [id], onDelete: Cascade)
   teacher User? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
+  reviewStatus String @default("assigné") // assigné | validé | corrections | corrigé
+  reviewNotes  Json   @default("[]")      // [{de:'prof'|'admin', texte, at}]
+
   sessions ExamSession[]
 
   @@index([teacherId])
@@ -180,6 +183,9 @@ model ProjectAssignment {
   teacher User?   @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   entries ProjectEntry[]
 
+  reviewStatus String @default("assigné")
+  reviewNotes  Json   @default("[]")
+
   @@index([teacherId])
   @@index([projectId])
 }
@@ -234,6 +240,7 @@ model SuiviNode {
   kind      String   // section | classe | groupe
   nom       String
   niveau    String?  // niveau (liste maîtresse) associé à un groupe, facultatif
+  matieres  Json     @default("[]") // sections : ids des matières suivies (vide = toutes)
   ordre     Int      @default(0)
   createdAt DateTime @default(now())
 
@@ -292,5 +299,12 @@ model PedaDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Assignation à un professeur (version parents uniquement, relecture et validation)
+  teacherId    String?
+  assignedAt   DateTime?
+  reviewStatus String    @default("") // "" (non assigné) | assigné | validé | corrections | corrigé
+  reviewNotes  Json      @default("[]")
+
   @@index([userId, type])
+  @@index([teacherId])
 }
