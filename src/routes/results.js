@@ -23,7 +23,7 @@ router.get('/', async (req, res) => {
     orderBy: { submittedAt: 'desc' },
   });
   res.json(attempts.map(a => ({
-    attemptId: a.id, nom: a.nom, classe: a.classe, groupe: a.groupe,
+    attemptId: a.id, nom: a.nom, niveau: a.niveau, classe: a.classe, groupe: a.groupe,
     examId: a.session.examId, examTitre: a.session.exam.titre, examMatiere: a.session.exam.matiere,
     examSections: a.session.exam.sections.map(s => ({ id: s.id, titre: s.titre, max: s.questions.reduce((sum, q) => sum + Number(q.points || 0), 0) })),
     submittedAt: a.submittedAt,
@@ -45,7 +45,7 @@ router.get('/:attemptId', async (req, res) => {
   }
   res.json({
     attempt: {
-      id: attempt.id, nom: attempt.nom, classe: attempt.classe, groupe: attempt.groupe,
+      id: attempt.id, nom: attempt.nom, niveau: attempt.niveau, classe: attempt.classe, groupe: attempt.groupe,
       reponses: attempt.reponses, submittedAt: attempt.submittedAt,
     },
     exam: attempt.session.exam,
@@ -98,6 +98,18 @@ router.post('/:attemptId/release', async (req, res) => {
   const result = await prisma.result.update({ where: { attemptId: attempt.id }, data: { visibleEleve: true } });
   await logAction('Résultat généré', attempt.nom);
   res.json({ ok: true, manualPending: result.manualPending });
+});
+
+// DELETE /api/results/:attemptId — efface la copie d'un élève (test ou erreur) avec son résultat
+router.delete('/:attemptId', async (req, res) => {
+  const attempt = await prisma.attempt.findUnique({ where: { id: req.params.attemptId }, include: { session: true } });
+  if (!attempt) return res.status(404).json({ error: 'Copie introuvable.' });
+  if (req.user.role !== 'ADMIN' && attempt.session.teacherId !== req.user.sub) {
+    return res.status(403).json({ error: "Cette copie ne vous appartient pas." });
+  }
+  await prisma.attempt.delete({ where: { id: attempt.id } });
+  await logAction('Copie supprimée', attempt.nom);
+  res.json({ ok: true });
 });
 
 module.exports = router;

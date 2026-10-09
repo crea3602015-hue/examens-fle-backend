@@ -24,8 +24,9 @@ async function makeMeasurer() {
     const font = fontFor(b), out = [];
     safe(b.text).split('\n').forEach(par => {
       let line = '';
+      const lead = (par.match(/^ +/) || [''])[0].slice(0, 12); // retrait voulu au début d'un paragraphe
       par.split(/\s+/).filter(Boolean).forEach(word => {
-        const test = line ? line + ' ' + word : word;
+        const test = line ? line + ' ' + word : lead + word;
         if (font.widthOfTextAtSize(test, size) <= width) { line = test; return; }
         if (line) out.push(line);
         // mot plus long que la ligne : on le coupe
@@ -63,7 +64,7 @@ function measureTable(table, s, P, M) {
     return { kind, cols: widths, cells, padX, padY, before: 0, after: 0, keep: kind !== 'trow', height: Math.max(minH, ...cells.map(c => cellHeight(c, padY))), ...extra };
   };
   const out = [build('thead', table.titles.map(tt => [{ text: tt, size: P.label + 0.5, bold: true, color: WHITE }]), false, { fill: FILL_HEAD })];
-  table.rows.forEach(r => out.push(r.type === 'cat' ? build('tcat', r.cells, true, { fill: FILL_BAND }) : build('trow', r.cells, false, {})));
+  table.rows.forEach(r => out.push(r.type === 'cat' ? build('tcat', r.cells, true, { fill: FILL_BAND }) : build('trow', r.cells, false, { ref: r.ref })));
   return out;
 }
 
@@ -113,7 +114,7 @@ async function layoutDocument(doc, version) {
     const theadB = measured.find(x => x.kind === 'thead');
     const flush = () => { if (cur.length) pages.push({ blocks: cur }); cur = []; used = 0; };
     const continued = () => {
-      const small = scaleBlock({ ...blocks[0], size: Math.max(9, blocks[0].size * 0.7), text: blocks[0].text + ' (suite)' }, scale);
+      const small = scaleBlock({ ...blocks[0], size: Math.max(9, blocks[0].size * 0.7), text: blocks[0].text + ' ' + (blocks[0].suite || '(suite)') }, scale);
       small.lines = M.wrap(small, small.size, P.frame.w - P.headerReserve); small.height = small.before + small.lines.length * small.size * LH + small.after; return small;
     };
     const startPage = withHead => {

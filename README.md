@@ -250,3 +250,20 @@ manuelle nécessaire de votre part au-delà d'un redéploiement normal.
 - **Conversion d'un examen Word ou PDF par IA** (`POST /api/convert/exam`) : le navigateur lit le document (Word : texte, gras,
   tableaux, images ; PDF : texte), l'IA (Groq) structure l'examen (parties, types de questions, points, réponses) et le serveur
   vérifie chaque question ; ce qui n'est pas certain est marqué « réponse à confirmer ». L'examen est créé en brouillon non vérifié.
+
+
+## Copie d'essai de l'application (sans utiliser Netlify)
+
+Le dossier `public/` contient une copie de l'application. Une fois le backend déployé sur Render, elle est disponible à
+`https://VOTRE-SERVICE.onrender.com/test/` : on y teste les changements avec la vraie base de données **avant** de les envoyer sur Netlify.
+Les comptes et les données sont les mêmes que sur le site normal.
+
+## Nouveautés de cette version (examens)
+
+- Niveau libre (liste + « Autre ») et « N/A » : l'élève écrit alors son niveau (A1, A2, L2…).
+- Logo propre à chaque examen (colonne `Exam.logoId`, ajoutée par `prisma db push`).
+- Copie `.json` d'un examen (images et logo inclus), réimportable sans rien changer.
+- Word `.docx` généré par le serveur (`POST /api/export/exam-word`) avec logo et images.
+- Session en pause : l'élève est bloqué ; session fermée : copies envoyées automatiquement.
+- Correction tolérante (pronom sujet accepté) et correction manuelle d'une réponse automatique.
+- Suppression d'une copie (`DELETE /api/results/:attemptId`).

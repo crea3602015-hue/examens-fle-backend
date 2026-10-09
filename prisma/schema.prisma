@@ -60,6 +60,7 @@ model Exam {
   navMode           String   @default("libre")     // libre | sequentiel
   duree             Int      @default(0)            // minutes, 0 = illimité
   autoriserReprise  Boolean  @default(true)
+  logoId            String?  // logo propre à cet examen (institution)
   imported          Boolean  @default(false)
   verified          Boolean  @default(true)
   sections          Json     // structure flexible : [{id,titre,questions:[...]}]
@@ -300,11 +301,46 @@ model PedaDocument {
   updatedAt DateTime @updatedAt
 
   // Assignation à un professeur (version parents uniquement, relecture et validation)
+  // (anciens champs, remplacés par PedaAssignment ; migrés automatiquement puis laissés vides)
   teacherId    String?
   assignedAt   DateTime?
-  reviewStatus String    @default("") // "" (non assigné) | assigné | validé | corrections | corrigé
+  reviewStatus String    @default("")
   reviewNotes  Json      @default("[]")
+
+  assignments PedaAssignment[]
 
   @@index([userId, type])
   @@index([teacherId])
+}
+
+// Un document peut être assigné à plusieurs professeurs ; chacun a sa propre relecture.
+model PedaAssignment {
+  id           String   @id @default(cuid())
+  docId        String
+  teacherId    String
+  assignedAt   DateTime @default(now())
+  reviewStatus String   @default("assigné") // assigné | validé | corrections | corrigé
+  reviewNotes  Json     @default("[]")
+
+  doc PedaDocument @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@unique([docId, teacherId])
+  @@index([teacherId])
+}
+
+// Journal d'activité : connexions, actions et pages consultées (pour les statistiques).
+model ActivityLog {
+  id       String   @id @default(cuid())
+  at       DateTime @default(now())
+  userId   String?
+  userName String?
+  role     String?
+  kind     String   // login | login_failed | action | page
+  action   String
+  detail   String?
+  device   String?
+  ip       String?
+
+  @@index([at])
+  @@index([userId, at])
 }

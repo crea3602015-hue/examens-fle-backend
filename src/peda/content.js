@@ -10,67 +10,111 @@ const HEADINGS = {
   'Lecture / Document': 'LECTURE ET DOCUMENTS', 'Expérience': 'EXPÉRIENCES', 'Schéma / Graphique': 'SCHÉMAS ET GRAPHIQUES',
   'Définition / Concept': 'DÉFINITIONS ET CONCEPTS', 'Exercices': 'EXERCICES', 'Vidéo': 'VIDÉOS', 'Document': 'DOCUMENTS', 'Autre': 'AUTRES CONTENUS',
 };
+const HEADINGS_ES = {
+  'Sujet / Thème': 'TEMAS', 'Grammaire': 'GRAMÁTICA', 'Verbes': 'VERBOS', 'Verbes / Conjugaison': 'VERBOS', 'Lexique / Vocabulaire': 'VOCABULARIO', 'Lecture': 'LECTURA', 'Chanson': 'CANCIONES',
+  'Compréhension orale': 'COMPRENSIÓN ORAL', 'Compréhension écrite': 'COMPRENSIÓN ESCRITA', 'Production orale': 'EXPRESIÓN ORAL', 'Production écrite': 'EXPRESIÓN ESCRITA', 'Culture / Civilisation': 'CULTURA Y CIVILIZACIÓN',
+  'Notion scientifique': 'NOCIONES CIENTÍFICAS', 'Vocabulaire scientifique': 'VOCABULARIO CIENTÍFICO', 'Lecture / Document': 'LECTURA Y DOCUMENTOS', 'Expérience': 'EXPERIMENTOS', 'Schéma / Graphique': 'ESQUEMAS Y GRÁFICOS',
+  'Définition / Concept': 'DEFINICIONES Y CONCEPTOS', 'Exercices': 'EJERCICIOS', 'Vidéo': 'VIDEOS', 'Document': 'DOCUMENTOS', 'Autre': 'OTROS CONTENIDOS',
+};
+const HEADINGS_EN = {
+  'Sujet / Thème': 'TOPICS', 'Grammaire': 'GRAMMAR', 'Verbes': 'VERBS', 'Verbes / Conjugaison': 'VERBS', 'Lexique / Vocabulaire': 'VOCABULARY', 'Lecture': 'READING', 'Chanson': 'SONGS',
+  'Compréhension orale': 'LISTENING COMPREHENSION', 'Compréhension écrite': 'READING COMPREHENSION', 'Production orale': 'SPEAKING', 'Production écrite': 'WRITING', 'Culture / Civilisation': 'CULTURE AND CIVILIZATION',
+  'Notion scientifique': 'SCIENTIFIC CONCEPTS', 'Vocabulaire scientifique': 'SCIENTIFIC VOCABULARY', 'Lecture / Document': 'READINGS AND DOCUMENTS', 'Expérience': 'EXPERIMENTS', 'Schéma / Graphique': 'DIAGRAMS AND GRAPHS',
+  'Définition / Concept': 'DEFINITIONS AND CONCEPTS', 'Exercices': 'EXERCISES', 'Vidéo': 'VIDEOS', 'Document': 'DOCUMENTS', 'Autre': 'OTHER CONTENT',
+};
+const LANGS = ['fr', 'es', 'en'];
+const L10N = {
+  fr: { headings: HEADINGS, guide: 'GUIDE DE RÉVISION D\'EXAMEN', appr: 'APPRENTISSAGES ATTENDUS', exam: 'Examen trimestriel', teacher: 'Enseignant', group: 'Groupe', level: 'niveau', suite: '(suite)',
+    thSubject: 'Sujet ou notion', thKnow: 'Ce que je dois savoir', thDo: 'Ce que je dois savoir faire', thRes: 'Pour réviser', thContent: 'Contenu', thLearn: 'Apprentissage attendu',
+    book: 'Livre', workbook: 'Cahier', workbookFull: 'Cahier d\'activités', video: 'Vidéo de révision', toVideo: 'Accéder à la vidéo', link: 'Lien internet', toLink: 'Accéder au lien', doc: 'Document', docDefault: 'Document à consulter',
+    ex: 'Exercices', exDefault: 'Exercices à revoir', page: 'page', pages: (d, f) => `pages ${d} à ${f}` },
+  es: { headings: HEADINGS_ES, guide: 'GUÍA DE REPASO DEL EXAMEN', appr: 'APRENDIZAJES ESPERADOS', exam: 'Examen trimestral', teacher: 'Docente', group: 'Grupo', level: 'nivel', suite: '(continuación)',
+    thSubject: 'Tema o noción', thKnow: 'Lo que debo saber', thDo: 'Lo que debo saber hacer', thRes: 'Para repasar', thContent: 'Contenido', thLearn: 'Aprendizaje esperado',
+    book: 'Libro', workbook: 'Cuaderno', workbookFull: 'Cuaderno de actividades', video: 'Video de repaso', toVideo: 'Ver el video', link: 'Enlace de internet', toLink: 'Abrir el enlace', doc: 'Documento', docDefault: 'Documento por consultar',
+    ex: 'Ejercicios', exDefault: 'Ejercicios por repasar', page: 'página', pages: (d, f) => `páginas ${d} a ${f}` },
+  en: { headings: HEADINGS_EN, guide: 'EXAM REVISION GUIDE', appr: 'EXPECTED LEARNING OUTCOMES', exam: 'Term exam', teacher: 'Teacher', group: 'Group', level: 'level', suite: '(continued)',
+    thSubject: 'Topic or concept', thKnow: 'What I must know', thDo: 'What I must be able to do', thRes: 'To revise', thContent: 'Content', thLearn: 'Expected learning outcome',
+    book: 'Book', workbook: 'Workbook', workbookFull: 'Activity workbook', video: 'Revision video', toVideo: 'Watch the video', link: 'Web link', toLink: 'Open the link', doc: 'Document', docDefault: 'Document to read',
+    ex: 'Exercises', exDefault: 'Exercises to review', page: 'page', pages: (d, f) => `pages ${d} to ${f}` },
+};
 
 const { noDash } = require('./text');
+/** Texte court (titres, en-têtes) : sans grands tirets, sans espaces en trop. */
 const t = v => noDash(v).trim();
+/** Texte libre saisi dans un tableau : on garde les lignes vides et les retraits voulus par l'utilisateur. */
+const tx = v => noDash(v).replace(/\r/g, '').replace(/\u00a0/g, ' ').replace(/[ \t]+$/gm, '').replace(/^\n+/, '').replace(/\n{4,}/g, '\n\n\n').replace(/\s+$/, m => (m.includes('\n') ? '\n'.repeat(Math.min(2, (m.match(/\n/g) || []).length)) : ''));
 
-function pagesText(debut, fin) {
+/** Valeur d'un champ dans une langue : traduction si elle existe, sinon l'original français. */
+function fieldOf(x, f, lang) {
+  if (lang && lang !== 'fr') { const tr = x.tr && x.tr[lang]; if (tr && tr[f] != null && String(tr[f]).trim() !== '') return tr[f]; }
+  return x[f];
+}
+const infoOf = (info, trInfo, lang, k) => (lang !== 'fr' && trInfo && trInfo[lang] && trInfo[lang][k]) ? trInfo[lang][k] : info[k];
+
+function pagesText(debut, fin, Ln = L10N.fr) {
   const d = t(debut), f = t(fin);
-  if (d && f && d !== f) return `pages ${d} à ${f}`;
-  if (d || f) return `page ${d || f}`;
+  if (d && f && d !== f) return Ln.pages(d, f);
+  if (d || f) return `${Ln.page} ${d || f}`;
   return '';
 }
 
 /** Lignes "Pour réviser" d'une ressource : uniquement les informations fournies. */
-function resourceLines(r) {
+function resourceLines(r, Ln = L10N.fr) {
   const out = []; // {text, link?, note?}
   const join = parts => parts.map(t).filter(Boolean).join(', ');
   const url = t(r.url), com = t(r.commentaire);
   switch (r.type) {
-    case 'livre': { const s = join([r.titre, r.chapitre, pagesText(r.debut, r.fin)]); out.push({ text: s ? `Livre : ${s}` : 'Livre' }); break; }
-    case 'cahier': { const s = join([r.titre, r.chapitre, pagesText(r.debut, r.fin)]); out.push({ text: s ? `Cahier : ${s}` : 'Cahier d\'activités' }); break; }
-    case 'video': out.push({ text: t(r.titre) || 'Vidéo de révision' }); if (url) out.push({ text: 'Accéder à la vidéo', link: url }); break;
-    case 'lien': out.push({ text: t(r.titre) || 'Lien internet' }); if (url) out.push({ text: 'Accéder au lien', link: url }); break;
-    case 'document': out.push({ text: t(r.titre) ? `Document : ${t(r.titre)}` : 'Document à consulter' }); break;
-    case 'exercice': out.push({ text: t(r.titre) ? `Exercices : ${t(r.titre)}` : 'Exercices à revoir' }); break;
+    case 'livre': { const s = join([r.titre, r.chapitre, pagesText(r.debut, r.fin, Ln)]); out.push({ text: s ? `${Ln.book} : ${s}` : Ln.book }); break; }
+    case 'cahier': { const s = join([r.titre, r.chapitre, pagesText(r.debut, r.fin, Ln)]); out.push({ text: s ? `${Ln.workbook} : ${s}` : Ln.workbookFull }); break; }
+    case 'video': out.push({ text: t(r.titre) || Ln.video }); if (url) out.push({ text: Ln.toVideo, link: url }); break;
+    case 'lien': out.push({ text: t(r.titre) || Ln.link }); if (url) out.push({ text: Ln.toLink, link: url }); break;
+    case 'document': out.push({ text: t(r.titre) ? `${Ln.doc} : ${t(r.titre)}` : Ln.docDefault }); break;
+    case 'exercice': out.push({ text: t(r.titre) ? `${Ln.ex} : ${t(r.titre)}` : Ln.exDefault }); break;
     default: if (t(r.titre)) out.push({ text: t(r.titre) });
   }
-  if (com && out.length) out.splice(r.type === 'video' || r.type === 'lien' ? 1 : 1, 0, { text: com, note: true });
+  if (com && out.length) out.splice(1, 0, { text: com, note: true });
   return out;
 }
 
-function headerLine(info, type) {
-  const niveau = [t(info.classe), t(info.section) && !t(info.classe) ? t(info.section) : ''].filter(Boolean).join(' ');
-  const l2 = [t(info.matiere), niveau].filter(Boolean).join(', ');
-  return { l2: l2 + (t(info.niveauLinguistique) ? `, niveau ${t(info.niveauLinguistique)}` : ''), l3: [t(info.periode), t(info.annee)].filter(Boolean).join(', ') };
+function headerLine(info, type, trInfo, lang, Ln) {
+  const g = k => t(infoOf(info, trInfo, lang, k));
+  const niveau = [g('classe'), g('section') && !g('classe') ? g('section') : ''].filter(Boolean).join(' ');
+  const l2 = [g('matiere'), niveau].filter(Boolean).join(', ');
+  return { l2: l2 + (t(info.niveauLinguistique) ? `, ${Ln.level} ${t(info.niveauLinguistique)}` : ''), l3: [g('periode'), g('annee')].filter(Boolean).join(', ') };
 }
 
 
 const FILL_HEAD = [0.08, 0.13, 0.24], FILL_BAND = [0.90, 0.93, 0.97], WHITE = [1, 1, 1];
 
-/** Corps du document sous forme de tableau (même contenu, mêmes règles : rien n'est inventé). */
-function buildTable(doc, P) {
+/** Corps du document sous forme de tableau (même contenu, mêmes règles : rien n'est inventé).
+ *  Chaque ligne porte une « ref » : c'est ce qui permet de modifier le texte directement sur la feuille. */
+function buildTable(doc, P, lang, Ln) {
   const items = doc.data.items || [];
   const guide = doc.type === 'guide';
+  const pre = lang === 'fr' ? '' : `tr.${lang}.`;
   const it = (text, o = {}) => ({ text, size: P.body, color: P.ink, ...o });
+  const fv = (x, f) => tx(fieldOf(x, f, lang));
+  const head = c => HEAD(Ln, c);
   if (!guide) {
     const order = [], groups = {};
     items.forEach(x => { const c = t(x.categorie) || 'Autre'; if (!groups[c]) { groups[c] = []; order.push(c); } groups[c].push(x); });
     const rows = [];
     order.forEach(c => {
-      const list = groups[c].filter(x => t(x.nom) || t(x.texte));
+      const list = groups[c].filter(x => fv(x, 'nom').trim() || fv(x, 'texte').trim());
       if (!list.length) return; // une rubrique vide disparaît
-      rows.push({ type: 'cat', cells: [[it(HEADINGS[c] || c.toUpperCase(), { bold: true, color: P.navy, size: P.label + 1 })]] });
-      list.forEach(x => rows.push({ type: 'row', cells: [[it(t(x.nom), { bold: true })], [it(t(x.texte))]] }));
+      rows.push({ type: 'cat', cells: [[it(head(c), { bold: true, color: P.navy, size: P.label + 1 })]] });
+      list.forEach(x => rows.push({ type: 'row', ref: { id: x.id, fields: [pre + 'nom', pre + 'texte'], raw: [fv(x, 'nom'), fv(x, 'texte')] }, cells: [[it(fv(x, 'nom'), { bold: true })], [it(fv(x, 'texte'))]] }));
     });
-    return { cols: [0.34, 0.66], titles: ['Contenu', 'Apprentissage attendu'], rows };
+    return { cols: [0.34, 0.66], titles: [Ln.thContent, Ln.thLearn], rows };
   }
   const GENERIC = new Set(['', 'Sujet / Thème', 'Autre', 'Notion', 'Sujets']);
-  const lines = x => (x.ressources || []).flatMap(resourceLines);
-  const kept = items.filter(x => t(x.nom) || t(x.savoir) || t(x.savoirFaire) || lines(x).length);
+  const resText = x => { const libre = tx(fieldOf(x, 'resLibre', lang)); return libre.trim() ? libre : null; };
+  const lines = x => resText(x) != null ? resText(x).split('\n').map(text => ({ text })) : (x.ressources || []).flatMap(r => resourceLines(r, Ln));
+  const rawRes = x => resText(x) != null ? resText(x) : lines(x).map(l => l.text).join('\n');
+  const kept = items.filter(x => fv(x, 'nom').trim() || fv(x, 'savoir').trim() || fv(x, 'savoirFaire').trim() || lines(x).length);
   // Une colonne entièrement vide disparaît : la feuille reste pleine, sans trou.
-  const hasSav = kept.some(x => t(x.savoir)), hasSf = kept.some(x => t(x.savoirFaire)), hasRes = kept.some(x => lines(x).length);
-  const colDefs = [{ title: 'Sujet ou notion', w: 2, on: true }, { title: 'Ce que je dois savoir', w: 3, on: hasSav }, { title: 'Ce que je dois savoir faire', w: 3, on: hasSf }, { title: 'Pour réviser', w: 2.4, on: hasRes }].filter(c => c.on);
+  const hasSav = kept.some(x => fv(x, 'savoir').trim()), hasSf = kept.some(x => fv(x, 'savoirFaire').trim()), hasRes = kept.some(x => lines(x).length);
+  const colDefs = [{ title: Ln.thSubject, w: 2, on: true }, { title: Ln.thKnow, w: 3, on: hasSav }, { title: Ln.thDo, w: 3, on: hasSf }, { title: Ln.thRes, w: 2.4, on: hasRes }].filter(c => c.on);
   const sum = colDefs.reduce((a, c) => a + c.w, 0);
   const rows = [];
   let lastCat = null;
@@ -78,59 +122,65 @@ function buildTable(doc, P) {
     const cat = t(x.categorie);
     if (cat !== lastCat) {
       lastCat = cat;
-      if (!GENERIC.has(cat)) rows.push({ type: 'cat', cells: [[it(HEADINGS[cat] || cat.toUpperCase(), { bold: true, color: P.navy, size: P.label + 1 })]] });
+      if (!GENERIC.has(cat)) rows.push({ type: 'cat', cells: [[it(head(cat), { bold: true, color: P.navy, size: P.label + 1 })]] });
     }
-    const cells = [[it(t(x.nom), { bold: true, color: P.navy })]];
-    if (hasSav) cells.push([it(t(x.savoir))]);
-    if (hasSf) cells.push([it(t(x.savoirFaire))]);
-    if (hasRes) cells.push(lines(x).map(l => l.link ? it(l.text, { link: l.link, color: P.link }) : it(l.text, { italic: !!l.note, color: l.note ? P.gray : P.ink, size: l.note ? P.body - 0.5 : P.body })));
-    rows.push({ type: 'row', cells });
+    const cells = [[it(fv(x, 'nom'), { bold: true, color: P.navy })]], fields = [pre + 'nom'], raw = [fv(x, 'nom')];
+    if (hasSav) { cells.push([it(fv(x, 'savoir'))]); fields.push(pre + 'savoir'); raw.push(fv(x, 'savoir')); }
+    if (hasSf) { cells.push([it(fv(x, 'savoirFaire'))]); fields.push(pre + 'savoirFaire'); raw.push(fv(x, 'savoirFaire')); }
+    if (hasRes) {
+      cells.push(resText(x) != null ? lines(x).map(l => it(l.text)) : lines(x).map(l => l.link ? it(l.text, { link: l.link, color: P.link }) : it(l.text, { italic: !!l.note, color: l.note ? P.gray : P.ink, size: l.note ? P.body - 0.5 : P.body })));
+      fields.push(pre + 'resLibre'); raw.push(rawRes(x));
+    }
+    rows.push({ type: 'row', ref: { id: x.id, fields, raw }, cells });
   });
   return { cols: colDefs.map(c => c.w / sum), titles: colDefs.map(c => c.title), rows };
 }
+const HEAD = (Ln, c) => (Ln.headings[c] || String(c).toUpperCase());
 
-/** profile : tailles de base (en points) selon la version. */
+/** profile : tailles de base (en points) selon la version ; lang : 'fr' | 'es' | 'en'. */
 function buildBlocks(doc, P) {
-  const info = doc.data.info || {}, items = doc.data.items || [];
+  const lang = LANGS.includes(doc.lang) ? doc.lang : 'fr', Ln = L10N[lang];
+  const info = doc.data.info || {}, items = doc.data.items || [], trInfo = doc.data.trInfo || {};
   const guide = doc.type === 'guide';
-  const hl = headerLine(info, doc.type);
+  const fv = (x, f) => tx(fieldOf(x, f, lang));
+  const hl = headerLine(info, doc.type, trInfo, lang, Ln);
   const B = [];
-  B.push({ kind: 'title', text: guide ? 'GUIDE DE RÉVISION D\'EXAMEN' : 'APPRENTISSAGES ATTENDUS', size: P.title, bold: true, color: P.navy, header: true, after: 3 });
+  B.push({ kind: 'title', text: guide ? Ln.guide : Ln.appr, size: P.title, bold: true, color: P.navy, header: true, after: 3, suite: Ln.suite });
   if (hl.l2) B.push({ kind: 'subtitle', text: hl.l2, size: P.subtitle, bold: true, color: P.ink, header: true, after: 2 });
   if (hl.l3) B.push({ kind: 'meta2', text: hl.l3, size: P.subtitle - 1, color: P.ink, header: true, after: 2 });
-  if (guide) B.push({ kind: 'meta2', text: t(info.examenLabel) || 'Examen trimestriel', size: P.subtitle - 1, color: P.ink, header: true, after: 2 });
-  const who = [t(info.enseignant) && `Enseignant : ${t(info.enseignant)}`, t(info.groupe) && `Groupe : ${t(info.groupe)}`].filter(Boolean).join('    ');
+  if (guide) { const exFr = t(info.examenLabel) || 'Examen trimestriel', exTr = t(trInfo[lang] && trInfo[lang].examenLabel); B.push({ kind: 'meta2', text: lang === 'fr' ? exFr : (exTr || (exFr === 'Examen trimestriel' ? Ln.exam : exFr)), size: P.subtitle - 1, color: P.ink, header: true, after: 2 }); }
+  const who = [t(info.enseignant) && `${Ln.teacher} : ${t(info.enseignant)}`, t(info.groupe) && `${Ln.group} : ${t(info.groupe)}`].filter(Boolean).join('    ');
   if (who) B.push({ kind: 'meta', text: who, size: P.meta, color: P.gray, header: true, after: 2 });
   B.push({ kind: 'rule', size: 1, color: P.navy, before: 4, after: 6 });
 
   if (doc.data.presentation !== 'liste') {
-    B.push({ kind: 'table', table: buildTable(doc, P) });
+    B.push({ kind: 'table', table: buildTable(doc, P, lang, Ln) });
     return B;
   }
+  const pre = lang === 'fr' ? '' : `tr.${lang}.`;
   if (!guide) {
     // Rubriques regroupées ; une rubrique sans élément disparaît automatiquement.
     const order = [], groups = {};
-    items.forEach(it => { const c = t(it.categorie) || 'Autre'; if (!groups[c]) { groups[c] = []; order.push(c); } groups[c].push(it); });
+    items.forEach(x => { const c = t(x.categorie) || 'Autre'; if (!groups[c]) { groups[c] = []; order.push(c); } groups[c].push(x); });
     order.forEach(c => {
-      const list = groups[c].filter(it => t(it.nom) || t(it.texte));
+      const list = groups[c].filter(x => fv(x, 'nom').trim() || fv(x, 'texte').trim());
       if (!list.length) return;
-      B.push({ kind: 'cat', text: HEADINGS[c] || c.toUpperCase(), size: P.cat, bold: true, color: P.navy, before: 7, after: 2, keep: true });
-      list.forEach(it => {
-        if (t(it.nom)) B.push({ kind: 'item', text: t(it.nom), size: P.item, bold: true, color: P.ink, before: 3, after: 1, keep: !!t(it.texte) });
-        if (t(it.texte)) B.push({ kind: 'para', text: t(it.texte), size: P.body, color: P.ink, after: 2 });
+      B.push({ kind: 'cat', text: HEAD(Ln, c), size: P.cat, bold: true, color: P.navy, before: 7, after: 2, keep: true });
+      list.forEach(x => {
+        if (fv(x, 'nom').trim()) B.push({ kind: 'item', text: fv(x, 'nom'), size: P.item, bold: true, color: P.ink, before: 3, after: 1, keep: !!fv(x, 'texte').trim(), ref: { id: x.id, fields: [pre + 'nom'], raw: [fv(x, 'nom')] } });
+        if (fv(x, 'texte').trim()) B.push({ kind: 'para', text: fv(x, 'texte'), size: P.body, color: P.ink, after: 2, ref: { id: x.id, fields: [pre + 'texte'], raw: [fv(x, 'texte')] } });
       });
     });
   } else {
-    items.forEach(it => {
-      const cat = HEADINGS[t(it.categorie)] ? t(it.categorie) : t(it.categorie);
-      const head = [ (t(it.categorie) || '').split(' / ')[0].toUpperCase(), t(it.nom).toUpperCase() ].filter(Boolean).join(', ');
-      if (!head && !t(it.savoir) && !t(it.savoirFaire) && !(it.ressources || []).length) return;
+    items.forEach(x => {
+      const head = [(t(x.categorie) || '').split(' / ')[0].toUpperCase(), fv(x, 'nom').trim().toUpperCase()].filter(Boolean).join(', ');
+      const lines = (x.ressources || []).flatMap(r => resourceLines(r, Ln));
+      if (!head && !fv(x, 'savoir').trim() && !fv(x, 'savoirFaire').trim() && !lines.length) return;
       B.push({ kind: 'cat', text: head, size: P.cat, bold: true, color: P.navy, before: 8, after: 2, keep: true });
-      if (t(it.savoir)) { B.push({ kind: 'label', text: 'Ce que je dois savoir', size: P.label, bold: true, color: P.gray, before: 2, after: 0, keep: true }); B.push({ kind: 'para', text: t(it.savoir), size: P.body, color: P.ink, after: 2 }); }
-      if (t(it.savoirFaire)) { B.push({ kind: 'label', text: 'Ce que je dois savoir faire', size: P.label, bold: true, color: P.gray, before: 2, after: 0, keep: true }); B.push({ kind: 'para', text: t(it.savoirFaire), size: P.body, color: P.ink, after: 2 }); }
-      const lines = (it.ressources || []).flatMap(resourceLines);
+      if (fv(x, 'savoir').trim()) { B.push({ kind: 'label', text: Ln.thKnow, size: P.label, bold: true, color: P.gray, before: 2, after: 0, keep: true }); B.push({ kind: 'para', text: fv(x, 'savoir'), size: P.body, color: P.ink, after: 2, ref: { id: x.id, fields: [pre + 'savoir'], raw: [fv(x, 'savoir')] } }); }
+      if (fv(x, 'savoirFaire').trim()) { B.push({ kind: 'label', text: Ln.thDo, size: P.label, bold: true, color: P.gray, before: 2, after: 0, keep: true }); B.push({ kind: 'para', text: fv(x, 'savoirFaire'), size: P.body, color: P.ink, after: 2, ref: { id: x.id, fields: [pre + 'savoirFaire'], raw: [fv(x, 'savoirFaire')] } }); }
       if (lines.length) {
-        B.push({ kind: 'label', text: 'Pour réviser', size: P.label, bold: true, color: P.gray, before: 2, after: 0, keep: true });
+        B.push({ kind: 'label', text: Ln.thRes, size: P.label, bold: true, color: P.gray, before: 2, after: 0, keep: true });
         lines.forEach(l => B.push(l.link
           ? { kind: 'link', text: l.text, link: l.link, size: P.body, color: P.link, indent: 8, after: 0 }
           : { kind: 'res', text: l.text, size: l.note ? P.body - 0.5 : P.body, italic: !!l.note, color: l.note ? P.gray : P.ink, indent: 8, after: 0 }));
@@ -149,4 +199,4 @@ const PROFILES = {
     page: { w: 612, h: 396 }, margin: { l: 36, r: 36, t: 22, b: 18 }, frame: { w: 540, h: 352 }, logo: 40, minScale: 0.8, maxScale: 1.15, headerReserve: 52, copies: 2, padX: 3.5, padY: 2.5 },
 };
 
-module.exports = { buildBlocks, PROFILES, HEADINGS, resourceLines, pagesText, FILL_HEAD, FILL_BAND, WHITE };
+module.exports = { buildBlocks, PROFILES, HEADINGS, L10N, LANGS, resourceLines, pagesText, FILL_HEAD, FILL_BAND, WHITE };

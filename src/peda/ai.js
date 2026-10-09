@@ -179,4 +179,35 @@ ${source}
   } catch (e) { return fb(); }
 }
 
-module.exports = { generate, fromDocument, fallbackAppr, fallbackGuide, looksInvented };
+/* ---------- Traduction (espagnol, anglais) : le texte français reste la référence ---------- */
+const LANG_NAMES = { es: 'espagnol', en: 'anglais' };
+const TR_FIELDS = ['nom', 'texte', 'savoir', 'savoirFaire'];
+async function translateOne(lang, items, info) {
+  const payload = { info: {}, items: [] };
+  ['matiere', 'classe', 'section', 'periode', 'examenLabel'].forEach(k => { if (t(info[k])) payload.info[k] = t(info[k]); });
+  items.forEach(it => { const o = { id: it.id }; TR_FIELDS.forEach(f => { if (t(it[f])) o[f] = String(it[f]).slice(0, 1500); }); if (Object.keys(o).length > 1) payload.items.push(o); });
+  const prompt = `Tu es traducteur pour un collège. Traduis en ${LANG_NAMES[lang]} les textes du JSON ci-dessous, destinés aux parents d'élèves.
+Règles : traduction fidèle, simple et naturelle ; même longueur et même ton ; garde tels quels les noms propres, titres de livres, mots d'exemple en français qui font l'objet de la leçon et les chiffres ; conserve les sauts de ligne. N'ajoute rien, ne retire rien. N'utilise jamais de tiret long (— ou –).
+Sortie : exactement la même structure JSON {"info":{...},"items":[{"id":"...", ...mêmes champs traduits}]}, sans aucun texte autour.
+JSON :
+${JSON.stringify(payload)}`;
+  const parsed = await callGroq(prompt);
+  const out = { info: {}, items: {} };
+  Object.keys(payload.info).forEach(k => { if (t(parsed.info && parsed.info[k])) out.info[k] = t(parsed.info[k]); });
+  (parsed.items || []).forEach(r => {
+    const src = items.find(x => String(x.id) === String(r.id)); if (!src) return;
+    const o = {};
+    TR_FIELDS.forEach(f => { if (t(src[f]) && r[f] != null && String(r[f]).trim()) o[f] = noDash(r[f]).replace(/\r/g, '').trim(); });
+    out.items[src.id] = o;
+  });
+  return out;
+}
+/** items : [{id, nom, texte, savoir, savoirFaire}] -> { es: {info, items:{id:{...}}}, en: {...} } */
+async function translate(items, info, langs) {
+  if (!process.env.GROQ_API_KEY) { const e = new Error("La traduction utilise l'IA, qui n'est pas configurée sur ce serveur."); e.status = 503; throw e; }
+  const result = {};
+  for (const lang of langs) if (LANG_NAMES[lang]) result[lang] = await translateOne(lang, items, info);
+  return result;
+}
+
+module.exports = { generate, fromDocument, translate, fallbackAppr, fallbackGuide, looksInvented };

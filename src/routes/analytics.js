@@ -23,7 +23,7 @@ router.get('/dashboard', async (req, res) => {
   const successRate = withResult.length ? Math.round((100 * withResult.filter(a => a.result.pct >= 50).length) / withResult.length) : 0;
 
   const byLevel = {};
-  ['Préscolaire', 'Primaire', 'Secondaire'].forEach(niv => {
+  [...new Set(['Préscolaire', 'Primaire', 'Secondaire', ...withResult.map(a => a.session.exam.niveau)])].forEach(niv => {
     const rel = withResult.filter(a => a.session.exam.niveau === niv);
     byLevel[niv] = rel.length ? Math.round(rel.reduce((s, a) => s + a.result.pct, 0) / rel.length) : null;
   });

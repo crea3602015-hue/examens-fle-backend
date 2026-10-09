@@ -227,14 +227,18 @@ async function drawStudentSheet(doc, { examTitle, matiere, teacherName, student,
 
   // Diagramme de réussite par section
   let y = doc.y;
-  const barMaxWidth = 260;
+  const barMaxWidth = 240;
   sections.forEach(sec => {
     if (y > 740) { doc.addPage(); y = 40; }
-    doc.font('Helvetica').fontSize(9).fillColor('#000').text(sec.titre, 40, y, { width: 140 });
-    doc.rect(190, y, barMaxWidth, 10).fill('#EEEEEE');
-    doc.rect(190, y, barMaxWidth * (sec.pct / 100), 10).fill(scoreColorHex(sec.pct));
-    doc.fillColor('#000').fontSize(9).text(sec.pct + '%', 190 + barMaxWidth + 8, y);
-    y += 16;
+    doc.font('Helvetica').fontSize(9);
+    const labelH = doc.heightOfString(sec.titre, { width: 190 });
+    const rowH = Math.max(16, labelH + 6); // la ligne s'adapte aux titres longs (plus de chevauchement)
+    doc.fillColor('#000').text(sec.titre, 40, y, { width: 190 });
+    const by = y + (rowH - 10) / 2 - 1;
+    doc.rect(240, by, barMaxWidth, 10).fill('#EEEEEE');
+    doc.rect(240, by, barMaxWidth * (sec.pct / 100), 10).fill(scoreColorHex(sec.pct));
+    doc.fillColor('#000').fontSize(9).text(sec.pct + '%', 240 + barMaxWidth + 8, by, { lineBreak: false });
+    y += rowH;
   });
   doc.y = y + 12;
   doc.x = 40;

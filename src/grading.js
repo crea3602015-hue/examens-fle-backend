@@ -19,9 +19,18 @@ function norm(s) {
     .replace(/[’'`´]/g, ' ').replace(/[^a-z0-9\u0153 ]/g, ' ').replace(/\s+/g, ' ').trim().replace(/(\d) h\b/g, '$1h');
 }
 /** Une réponse attendue peut proposer des variantes séparées par « | » (ex. « 8 heures|8h|8h00 »). */
+/** Retire un pronom sujet au début (« je suis » -> « suis », « j'ai » -> « ai »), pour accepter le verbe conjugué avec son pronom. */
+function stripPronoun(n) {
+  return n.replace(/^(je|j|tu|il|elle|on|nous|vous|ils|elles) /, '').trim();
+}
 function matchesAny(given, spec) {
   const alts = String(spec == null ? '' : spec).split('|').map(norm).filter(a => a !== '');
-  return alts.includes(norm(given));
+  const g = norm(given);
+  if (alts.includes(g)) return true;
+  // Tolérance : la réponse donnée contient en plus le pronom sujet (« je m'appelle » pour « m'appelle »),
+  // ou la réponse attendue contient le pronom et l'élève ne l'a pas écrit (« suis » pour « je suis »).
+  const gs = stripPronoun(g);
+  return gs !== '' && alts.some(a => a === gs || stripPronoun(a) === gs);
 }
 
 /** Arrondi à 2 décimales (les notes peuvent être décimales : 3,5 / 5). */
@@ -153,7 +162,13 @@ function computeResult(exam, reponses, manualOverrides = {}, oralOverride = null
         }
         return;
       }
-      const g = gradeAuto(q, reponses[q.id]);
+      let g = gradeAuto(q, reponses[q.id]);
+      // Le professeur peut corriger la note d'une question corrigée automatiquement (ex. réponse jugée bonne malgré tout).
+      const ov = manualOverrides[q.id];
+      if (ov !== undefined && ov !== null && ov !== '' && Number.isFinite(Number(ov))) {
+        const pv = round2(clamp(ov, q.points));
+        g = { correct: pv >= Number(q.points || 0), points: pv, overridden: true, auto: gradeAuto(q, reponses[q.id]).points };
+      }
       autoDetail[q.id] = g;
       secScore += g.points;
     });

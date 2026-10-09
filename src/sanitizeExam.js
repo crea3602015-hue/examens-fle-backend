@@ -51,6 +51,7 @@ function sanitizeExam(exam) {
   return {
     id: exam.id, titre: exam.titre, niveau: exam.niveau, navMode: exam.navMode,
     duree: exam.duree, autoriserReprise: exam.autoriserReprise,
+    logo: exam.logoId ? '/api/uploads/' + exam.logoId : '',
     sections: (exam.sections || []).map(sec => ({
       id: sec.id, titre: sec.titre, audio: sec.audio || '', consigne: sec.consigne || '',
       questions: (sec.questions || []).map(sanitizeQuestion),

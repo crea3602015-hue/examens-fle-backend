@@ -8,17 +8,28 @@ const {
   buildProjectEntryPdf, buildBulkProjectEntriesPdf, buildGlobalReportPdf, buildProjectDescriptionPdf,
 } = require('../reports');
 
+const { buildExamDocx } = require('../examWord');
 const router = express.Router();
 router.use(requireAuth, requireRole('TEACHER', 'ADMIN'));
 
 /** Fetches the school logo (if configured) as a Buffer + file extension, ready
     to embed in a PDF/Excel export. Never throws — a missing/broken logo must
     never break an export. */
-async function getLogo() {
+async function getLogo(examOrId) {
+  // Logo propre à l'examen (chaque institution a le sien). Sans argument : logo général de l'école (projets).
   try {
-    const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
-    if (!settings || !settings.schoolLogoId) return { logoBuffer: null, logoExt: null };
-    const file = await prisma.uploadedFile.findUnique({ where: { id: settings.schoolLogoId } });
+    let logoId;
+    if (examOrId === undefined) {
+      const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+      logoId = settings && settings.schoolLogoId;
+    } else if (examOrId && typeof examOrId === 'object') {
+      logoId = examOrId.logoId;
+    } else if (examOrId) {
+      const ex = await prisma.exam.findUnique({ where: { id: String(examOrId) } });
+      logoId = ex && ex.logoId;
+    }
+    if (!logoId) return { logoBuffer: null, logoExt: null };
+    const file = await prisma.uploadedFile.findUnique({ where: { id: logoId } });
     if (!file) return { logoBuffer: null, logoExt: null };
     const ext = file.mimeType.includes('png') ? 'png' : file.mimeType.includes('jpeg') || file.mimeType.includes('jpg') ? 'jpeg' : 'png';
     return { logoBuffer: Buffer.from(file.data, 'base64'), logoExt: ext };
@@ -86,7 +97,7 @@ function computeSectionStats(exam, attemptsWithResult) {
 
 /** Detects a single shared classe/groupe/niveau across attempts, for the filename. */
 function detectGrouping(attempts) {
-  const isSecondaire = attempts.length && attempts[0].session.exam.niveau === 'Secondaire';
+  const isSecondaire = attempts.length && !['Préscolaire', 'Primaire'].includes(attempts[0].session.exam.niveau);
   const classes = [...new Set(attempts.map(a => a.classe).filter(Boolean))];
   const groupes = [...new Set(attempts.map(a => a.groupe).filter(Boolean))];
   return {
@@ -116,7 +127,7 @@ async function buildClassExportData(req) {
 router.get('/results.xlsx', async (req, res) => {
   const data = await buildClassExportData(req);
   if (!data) return res.status(404).json({ error: 'Aucun résultat à exporter pour ce filtre.' });
-  const { logoBuffer, logoExt } = await getLogo();
+  const { logoBuffer, logoExt } = await getLogo(req.query.examId);
   const buf = await buildResultsXlsx({ ...data, logoBuffer, logoExt });
   const filename = reportFilename(data.examTitle || 'resultats', data.grouping) + '.xlsx';
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -128,7 +139,7 @@ router.get('/results.xlsx', async (req, res) => {
 router.get('/results.pdf', async (req, res) => {
   const data = await buildClassExportData(req);
   if (!data) return res.status(404).json({ error: 'Aucun résultat à exporter pour ce filtre.' });
-  const { logoBuffer } = await getLogo();
+  const { logoBuffer } = await getLogo(req.query.examId);
   const buf = await buildResultsPdf({ ...data, logoBuffer });
   const filename = reportFilename(data.examTitle || 'resultats', data.grouping) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
@@ -144,7 +155,7 @@ async function buildAttemptExportData(req, attemptId) {
   if (!attempt) return null;
   if (req.user.role !== 'ADMIN' && attempt.session.teacherId !== req.user.sub) return null;
   const exam = attempt.session.exam;
-  const isSecondaire = exam.niveau === 'Secondaire';
+  const isSecondaire = !['Préscolaire', 'Primaire'].includes(exam.niveau);
   const sections = exam.sections.map(sec => {
     const score = attempt.result ? attempt.result.sectionScores[sec.id] : undefined;
     const max = sectionPoints(sec);
@@ -155,7 +166,7 @@ async function buildAttemptExportData(req, attemptId) {
     };
   });
   return {
-    examTitle: exam.titre, matiere: exam.matiere, teacherName: attempt.session.teacher?.name,
+    examId: exam.id, examTitle: exam.titre, matiere: exam.matiere, teacherName: attempt.session.teacher?.name,
     student: { nom: attempt.nom, classe: attempt.classe, groupe: attempt.groupe, niveau: attempt.classe, isSecondaire },
     total: attempt.result?.total ?? 0, max: attempt.result?.max ?? 0, pct: attempt.result ? attempt.result.pct : null,
     sections,
@@ -178,7 +189,7 @@ router.get('/attempt/:attemptId/xlsx', async (req, res) => {
 router.get('/attempt/:attemptId/pdf', async (req, res) => {
   const data = await buildAttemptExportData(req, req.params.attemptId);
   if (!data) return res.status(404).json({ error: 'Copie introuvable.' });
-  const { logoBuffer } = await getLogo();
+  const { logoBuffer } = await getLogo(data.examId);
   const buf = await buildAttemptPdf({ ...data, logoBuffer });
   const filename = reportFilename(data.student.nom, data.grouping) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
@@ -193,7 +204,7 @@ router.get('/results-bulk.pdf', async (req, res) => {
   if (withResult.length === 0) return res.status(404).json({ error: 'Aucune copie corrigée à exporter pour ce filtre.' });
   const exam = withResult[0].session.exam;
   const teacherName = withResult[0].session.teacher?.name;
-  const isSecondaire = exam.niveau === 'Secondaire';
+  const isSecondaire = !['Préscolaire', 'Primaire'].includes(exam.niveau);
 
   const attemptsData = withResult.map(a => {
     const sections = exam.sections.map(sec => {
@@ -211,7 +222,7 @@ router.get('/results-bulk.pdf', async (req, res) => {
     };
   });
 
-  const { logoBuffer } = await getLogo();
+  const { logoBuffer } = await getLogo(exam);
   const buf = await buildBulkAttemptsPdf({ examTitle: exam.titre, matiere: exam.matiere, teacherName, attempts: attemptsData, logoBuffer });
   const grouping = detectGrouping(withResult);
   const filename = reportFilename((exam.titre || 'resultats') + '_toutes_les_copies', grouping) + '.pdf';
@@ -335,7 +346,7 @@ router.get('/global-report.pdf', requireRole('ADMIN'), async (req, res) => {
   const avgPct = withResult.length ? Math.round(withResult.reduce((s, a) => s + a.result.pct, 0) / withResult.length) : 0;
   const successRate = withResult.length ? Math.round((100 * withResult.filter(a => a.result.pct >= 50).length) / withResult.length) : 0;
   const byLevel = {};
-  ['Préscolaire', 'Primaire', 'Secondaire'].forEach(niv => {
+  [...new Set(['Préscolaire', 'Primaire', 'Secondaire', ...withResult.map(a => a.session.exam.niveau)])].forEach(niv => {
     const rel = withResult.filter(a => a.session.exam.niveau === niv);
     byLevel[niv] = rel.length ? Math.round(rel.reduce((s, a) => s + a.result.pct, 0) / rel.length) : null;
   });
@@ -401,5 +412,32 @@ async function buildProjectExportData(req) {
   };
   return { examTitle: project.titre, matiere: project.matiere, teacherName, rows, sectionStats, grouping };
 }
+
+// POST /api/export/exam-word { exam, answers } — l'examen en Word (.docx), logo de l'examen et images inclus
+router.post('/exam-word', async (req, res) => {
+  const { exam, answers } = req.body || {};
+  if (!exam || !Array.isArray(exam.sections)) return res.status(400).json({ error: 'Examen manquant.' });
+  try {
+    const ids = new Set();
+    const walk = o => { if (Array.isArray(o)) o.forEach(walk); else if (o && typeof o === 'object') Object.values(o).forEach(walk); else if (typeof o === 'string') { const m = /\/api\/uploads\/([A-Za-z0-9_-]+)/.exec(o); if (m) ids.add(m[1]); } };
+    walk(exam.sections);
+    const images = {};
+    for (const id of ids) {
+      const f = await prisma.uploadedFile.findUnique({ where: { id } });
+      if (f && /^image\/(png|jpe?g)$/i.test(f.mimeType)) images[id] = { buffer: Buffer.from(f.data, 'base64'), mime: f.mimeType };
+    }
+    let logo = null;
+    if (exam.logoId) {
+      const f = await prisma.uploadedFile.findUnique({ where: { id: exam.logoId } });
+      if (f && /^image\/(png|jpe?g)$/i.test(f.mimeType)) logo = { buffer: Buffer.from(f.data, 'base64'), mime: f.mimeType };
+    }
+    const buf = await buildExamDocx(exam, { images, logo, answers: !!answers });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename="examen.docx"');
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: 'Impossible de générer le Word : ' + e.message });
+  }
+});
 
 module.exports = router;

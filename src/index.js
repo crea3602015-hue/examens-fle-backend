@@ -26,8 +26,17 @@ const resultRoutes = require('./routes/results');
 const analyticsRoutes = require('./routes/analytics');
 const auditRoutes = require('./routes/audit');
 const exportRoutes = require('./routes/export');
+const activityRoutes = require('./routes/activity');
+const { actionLogger } = require('./activity');
+const path = require('path');
 
 const app = express();
+// Derrière le proxy de Render : sans cela, tous les utilisateurs auraient la même adresse IP.
+app.set('trust proxy', 1);
+
+// Copie d'essai de l'application (dossier public/) servie par le serveur : on teste ici AVANT de déployer sur Netlify.
+// Placée avant helmet pour ne pas bloquer les scripts de la page.
+app.use('/test', express.static(path.join(__dirname, '..', 'public'), { maxAge: 0, etag: false, setHeaders: res => res.setHeader('Cache-Control', 'no-store') }));
 
 // En-têtes de sécurité standards (protège contre le détournement de clics,
 // le sniffing MIME, etc.). "crossOrigin*" désactivés car nos images/fichiers
@@ -43,12 +52,15 @@ app.use(cors({
   },
 }));
 
+app.use(actionLogger);
 app.use(express.json({ limit: '4mb' })); // couvre un dessin ou un fichier importé (jusqu'à 2 Mo) encodé en base64
 
 // Limite les tentatives de connexion — freine les attaques par force brute sur
-// les mots de passe (20 essais / 15 min par adresse IP).
+// les mots de passe : 15 échecs / 15 min pour un même compte depuis une même adresse.
+// Les connexions réussies ne comptent pas : 15 professeurs sur le même réseau de l'école peuvent se connecter le même jour.
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false, skipSuccessfulRequests: true,
+  keyGenerator: req => `${req.ip}|${String((req.body && req.body.email) || '').toLowerCase().trim()}`,
   message: { error: 'Trop de tentatives de connexion. Réessayez dans quelques minutes.' },
 });
 app.use('/api/auth/login', loginLimiter);
@@ -76,6 +88,7 @@ app.use('/api/results', resultRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/activity', activityRoutes);
 
 // Gestionnaire d'erreurs générique — évite qu'une exception non prévue fasse
 // planter le serveur ou fuite une trace technique vers le client.

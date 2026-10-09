@@ -86,6 +86,10 @@ router.patch('/:id/status', requireRole('TEACHER', 'ADMIN'), async (req, res) =>
   if (statut === 'en_cours' && !session.startedAt) data.startedAt = new Date();
   if (statut === 'terminé') data.endedAt = new Date();
   const updated = await prisma.examSession.update({ where: { id: session.id }, data });
+  if (statut === 'terminé') {
+    // Fermeture : les copies encore en cours sont envoyées automatiquement avec les réponses déjà sauvegardées.
+    await prisma.attempt.updateMany({ where: { sessionId: session.id, statut: 'en_cours' }, data: { statut: 'soumis', submittedAt: new Date(), away: false } });
+  }
   await logAction(`Session : ${statut}`, updated.token);
   res.json({ ok: true, statut: updated.statut });
 });
@@ -115,7 +119,8 @@ router.get('/:id/live', requireRole('TEACHER', 'ADMIN'), async (req, res) => {
   res.json({
     started: attempts.length,
     finished: attempts.filter(a => a.statut === 'soumis').length,
-    students: attempts.map(a => ({ nom: a.nom, away: !!a.away, finished: a.statut === 'soumis' })),
+    students: attempts.map(a => ({ nom: a.nom, away: !!a.away && session.statut === 'en_cours', finished: a.statut === 'soumis' })),
+    sessionStatut: session.statut,
   });
 });
 

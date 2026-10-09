@@ -66,8 +66,10 @@ router.patch('/:id', async (req, res) => {
   if (!attempt || attempt.secret !== secret) return res.status(403).json({ error: 'Copie introuvable ou accès refusé.' });
   if (attempt.statut === 'soumis') return res.status(409).json({ error: 'Cette copie a déjà été envoyée.' });
 
+  const sess = await prisma.examSession.findUnique({ where: { id: attempt.sessionId } });
+  if (sess && sess.statut === 'en_pause') return res.status(409).json({ error: 'Session en pause.', sessionStatut: 'en_pause' });
   await prisma.attempt.update({ where: { id: attempt.id }, data: { reponses: reponses ?? attempt.reponses } });
-  res.json({ ok: true });
+  res.json({ ok: true, sessionStatut: sess ? sess.statut : null });
 });
 
 // POST /api/attempts/:id/incident { secret, type } — journalise une sortie de focus/plein écran
@@ -87,9 +89,10 @@ router.patch('/:id/presence', async (req, res) => {
   const { secret, away } = req.body || {};
   const attempt = await prisma.attempt.findUnique({ where: { id: req.params.id } });
   if (!attempt || attempt.secret !== secret) return res.status(403).json({ error: 'Copie introuvable ou accès refusé.' });
-  if (attempt.statut === 'soumis') return res.json({ ok: true });
+  const sess = await prisma.examSession.findUnique({ where: { id: attempt.sessionId } });
+  if (attempt.statut === 'soumis') return res.json({ ok: true, finished: true, sessionStatut: sess ? sess.statut : null });
   await prisma.attempt.update({ where: { id: attempt.id }, data: { away: !!away } });
-  res.json({ ok: true });
+  res.json({ ok: true, sessionStatut: sess ? sess.statut : null });
 });
 
 // POST /api/attempts/:id/submit { secret, reponses } — envoi final
@@ -98,6 +101,7 @@ router.post('/:id/submit', async (req, res) => {
   const attempt = await prisma.attempt.findUnique({ where: { id: req.params.id }, include: { session: true } });
   if (!attempt || attempt.secret !== secret) return res.status(403).json({ error: 'Copie introuvable ou accès refusé.' });
   if (attempt.statut === 'soumis') return res.json({ ok: true, alreadySubmitted: true });
+  if (attempt.session.statut === 'en_pause') return res.status(409).json({ error: 'Session en pause.', sessionStatut: 'en_pause' });
 
   await prisma.attempt.update({
     where: { id: attempt.id },
